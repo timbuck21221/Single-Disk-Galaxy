@@ -1,33 +1,61 @@
-/* style.css */
 body {
     margin: 0;
-    display: flex;
-    background-color: #000;
+    overflow: hidden;
+    background: #000;
+    font-family: Arial, sans-serif;
 }
 
 #canvas {
     display: block;
+    width: 100vw;
+    height: 100vh;
 }
 
 #controls {
     position: absolute;
-    top: 10px;
-    left: 10px;
-    background: rgba(255, 255, 255, 0.8);
-    padding: 10px;
-    border-radius: 5px;
-    font-family: Arial, sans-serif;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(30, 30, 50, 0.75);
+    color: #eee;
+    padding: 16px 20px;
+    border-radius: 8px;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+    z-index: 10;
+    max-width: 320px;
+}
+
+#controls h3 {
+    margin: 0 0 12px;
+    font-size: 1.1em;
 }
 
 #controls label {
     display: block;
-    margin-bottom: 5px;
+    margin: 8px 0;
+    font-size: 0.95em;
 }
 
-#controls button {
-    margin-top: 10px;
+#controls input[type="range"] {
+    vertical-align: middle;
+    width: 140px;
 }
 
 #controls span {
-    margin-left: 10px;
+    margin-left: 8px;
+    font-weight: bold;
+}
+
+#controls button {
+    margin-top: 12px;
+    padding: 8px 16px;
+    background: #444;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+#controls button:hover {
+    background: #666;
 }
