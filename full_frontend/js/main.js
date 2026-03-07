@@ -41,6 +41,7 @@ function init() {
     const r2 = d * (M1 / (M1 + M2));
     const v1 = omega * r1;
     const v2 = omega * r2;
+
     let CORE_VEL_INIT = [
         perp.map(v => v * v1),
         perp.map(v => v * -v2)
@@ -61,9 +62,24 @@ function init() {
     M_disk  = params.m_disk;  A_disk  = params.a_disk;  B_disk = params.b_disk;
     V_halo  = params.v_halo;  R_core  = params.r_core;
 
-    forces = compute_forces_multi(positions, CORES, M_bulge, A_bulge, M_disk, A_disk, B_disk, V_halo, R_core);
-    core_indices.forEach(i => forces[i] = [0,0,0]);
+    forces = compute_forces_multi(
+        positions, CORES,
+        M_bulge, A_bulge,
+        M_disk, A_disk, B_disk,
+        V_halo, R_core
+    );
+
+    core_indices.forEach(i => {
+        forces[i] = [0, 0, 0];
+    });
+
     add_core_core_forces(forces, CORES, CORE_MASSES, core_indices);
+
+    // Initialize or recenter the camera only when follow mode is active
+    const systemCenter = mean_pos(CORES);
+    if (!camera.initialized || camera.followEnabled) {
+        setCameraTarget(systemCenter, true);
+    }
 }
 
 // Physics step
@@ -78,8 +94,17 @@ function update() {
 
         CORES = core_indices.map(i => positions[i].slice());
 
-        let new_forces = compute_forces_multi(positions, CORES, M_bulge, A_bulge, M_disk, A_disk, B_disk, V_halo, R_core);
-        core_indices.forEach(i => new_forces[i] = [0,0,0]);
+        let new_forces = compute_forces_multi(
+            positions, CORES,
+            M_bulge, A_bulge,
+            M_disk, A_disk, B_disk,
+            V_halo, R_core
+        );
+
+        core_indices.forEach(i => {
+            new_forces[i] = [0, 0, 0];
+        });
+
         add_core_core_forces(new_forces, CORES, CORE_MASSES, core_indices);
 
         // Velocity update
@@ -91,19 +116,6 @@ function update() {
 
         forces = new_forces;
     }
-}
-
-// Main loop
-function loop() {
-    update();
-
-    const camera_center = mean_pos(CORES);
-    const { projected, mask } = project(positions, camera_center, camera_rot, 600, zoom);
-    const nearest_r = computeNearestRadii(positions, CORES, C);
-
-    render(canvas, ctx, positions, CORES, core_indices, core_set, mask, projected, nearest_r);
-
-    requestAnimationFrame(loop);
 }
 
 // Controls
@@ -143,6 +155,22 @@ function setupControls() {
         document.getElementById('trail_fade_val').textContent = trail_fade;
     });
 
+    document.getElementById('n_per_core').addEventListener('input', e => {
+        document.getElementById('n_per_core_val').textContent = e.target.value;
+    });
+
+    document.getElementById('disk_radius').addEventListener('input', e => {
+        document.getElementById('disk_radius_val').textContent = e.target.value;
+    });
+
+    document.getElementById('velocity_noise').addEventListener('input', e => {
+        document.getElementById('velocity_noise_val').textContent = e.target.value;
+    });
+
+    document.getElementById('core_vel_scale').addEventListener('input', e => {
+        document.getElementById('core_vel_scale_val').textContent = e.target.value;
+    });
+
     document.getElementById('apply').addEventListener('click', () => {
         n_per_core     = parseInt(document.getElementById('n_per_core').value);
         disk_radius    = parseFloat(document.getElementById('disk_radius').value);
@@ -150,6 +178,21 @@ function setupControls() {
         core_vel_scale = parseFloat(document.getElementById('core_vel_scale').value);
         init();
     });
+}
+
+// Main loop
+function loop() {
+    update();
+
+    const systemCenter = mean_pos(CORES);
+    updateCameraFollow(systemCenter);
+
+    const { projected, mask } = project(positions, canvas, camera);
+    const nearest_r = computeNearestRadii(positions, CORES, C);
+
+    render(canvas, ctx, positions, CORES, core_indices, core_set, mask, projected, nearest_r);
+
+    requestAnimationFrame(loop);
 }
 
 // Start everything
