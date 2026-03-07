@@ -11,10 +11,9 @@ body {
     height: 100vh;
 }
 
-#controls {
+#controls,
+#core-panel {
     position: absolute;
-    bottom: 20px;
-    left: 20px;
     background: rgba(30, 30, 50, 0.75);
     color: #eee;
     padding: 16px 20px;
@@ -22,31 +21,49 @@ body {
     backdrop-filter: blur(4px);
     box-shadow: 0 4px 12px rgba(0,0,0,0.6);
     z-index: 10;
+}
+
+#controls {
+    bottom: 20px;
+    left: 20px;
     max-width: 320px;
 }
 
-#controls h3 {
+#core-panel {
+    top: 20px;
+    right: 20px;
+    width: 320px;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+}
+
+#controls h3,
+#core-panel h3 {
     margin: 0 0 12px;
     font-size: 1.1em;
 }
 
-#controls label {
+#controls label,
+.core-editor label {
     display: block;
     margin: 8px 0;
     font-size: 0.95em;
 }
 
-#controls input[type="range"] {
+#controls input[type="range"],
+.core-editor input[type="range"] {
     vertical-align: middle;
     width: 140px;
 }
 
-#controls span {
+#controls span,
+.core-editor span {
     margin-left: 8px;
     font-weight: bold;
 }
 
-#controls button {
+#controls button,
+.core-apply-btn {
     margin-top: 12px;
     padding: 8px 16px;
     background: #444;
@@ -56,6 +73,79 @@ body {
     cursor: pointer;
 }
 
-#controls button:hover {
+#controls button:hover,
+.core-apply-btn:hover {
     background: #666;
+}
+
+#core-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.core-item {
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgba(255,255,255,0.04);
+}
+
+.core-header {
+    width: 100%;
+    text-align: left;
+    padding: 12px 14px;
+    border: none;
+    background: rgba(255,255,255,0.05);
+    color: #eee;
+    cursor: pointer;
+    font-size: 0.98em;
+    font-weight: bold;
+}
+
+.core-header:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+.core-item.selected .core-header {
+    background: rgba(120, 160, 255, 0.22);
+}
+
+.core-meta {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.83em;
+    font-weight: normal;
+    color: #cfd8ff;
+}
+
+.core-editor {
+    display: none;
+    padding: 12px 14px 14px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    background: rgba(0,0,0,0.18);
+}
+
+.core-item.selected .core-editor {
+    display: block;
+}
+
+.core-editor h4 {
+    margin: 0 0 10px;
+    font-size: 0.95em;
+    color: #fff;
+}
+
+.core-editor-note {
+    margin-top: 10px;
+    font-size: 0.82em;
+    line-height: 1.35;
+    color: #c9c9d8;
+}
+
+#core-panel-hint {
+    margin-top: 12px;
+    font-size: 0.85em;
+    color: #c9c9d8;
+    line-height: 1.4;
 }

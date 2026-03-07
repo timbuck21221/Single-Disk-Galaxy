@@ -8,23 +8,69 @@
 </head>
 <body>
     <canvas id="canvas"></canvas>
+
     <div id="controls">
         <h3>Live Controls</h3>
-        <label>Core Mass: <input type="range" id="core_mass" min="1000" max="10000" step="100" value="3500"><span id="core_mass_val">3500</span></label><br>
-        <label>DT: <input type="range" id="dt" min="0.01" max="0.1" step="0.01" value="0.02"><span id="dt_val">0.02</span></label><br>
-        <label>Physics Steps per Frame: <input type="range" id="steps" min="1" max="10" step="1" value="2"><span id="steps_val">2</span></label><br>
-        <label>R_MAX (Bounds Radius): <input type="range" id="r_max" min="50" max="200" step="10" value="120"><span id="r_max_val">120</span></label><br>
-        <label>K_TETHER (Bounds Strength): <input type="range" id="k_tether" min="0" max="0.01" step="0.001" value="0.002"><span id="k_tether_val">0.002</span></label><br>
-        <label>Enable Trails: <input type="checkbox" id="enable_trails" checked><span> (Visualize density over time)</span></label><br>
-        <label>Trail Fade: <input type="range" id="trail_fade" min="0.01" max="0.5" step="0.01" value="0.05"><span id="trail_fade_val">0.05</span></label><br>
+
+        <label>
+            DT:
+            <input type="range" id="dt" min="0.01" max="0.1" step="0.01" value="0.02">
+            <span id="dt_val">0.02</span>
+        </label><br>
+
+        <label>
+            Physics Steps per Frame:
+            <input type="range" id="steps" min="1" max="10" step="1" value="2">
+            <span id="steps_val">2</span>
+        </label><br>
+
+        <label>
+            R_MAX (Bounds Radius):
+            <input type="range" id="r_max" min="50" max="200" step="10" value="120">
+            <span id="r_max_val">120</span>
+        </label><br>
+
+        <label>
+            K_TETHER (Bounds Strength):
+            <input type="range" id="k_tether" min="0" max="0.01" step="0.001" value="0.002">
+            <span id="k_tether_val">0.002</span>
+        </label><br>
+
+        <label>
+            Enable Trails:
+            <input type="checkbox" id="enable_trails" checked>
+            <span> (Visualize density over time)</span>
+        </label><br>
+
+        <label>
+            Trail Fade:
+            <input type="range" id="trail_fade" min="0.01" max="0.5" step="0.01" value="0.05">
+            <span id="trail_fade_val">0.05</span>
+        </label><br>
 
         <h3>Initialization (Apply to restart)</h3>
-        <label>Particles per Core: <input type="range" id="n_per_core" min="100" max="2000" step="100" value="500"><span id="n_per_core_val">500</span></label><br>
-        <label>Disk Radius: <input type="range" id="disk_radius" min="5" max="15" step="1" value="8"><span id="disk_radius_val">8</span></label><br>
-        <label>Velocity Noise: <input type="range" id="velocity_noise" min="0" max="0.1" step="0.01" value="0.01"><span id="velocity_noise_val">0.01</span></label><br>
-        <label>Core Velocity Scale: <input type="range" id="core_vel_scale" min="0.5" max="1.5" step="0.1" value="1.0"><span id="core_vel_scale_val">1.0</span></label><br>
+
+        <label>
+            Disk Radius:
+            <input type="range" id="disk_radius" min="5" max="15" step="1" value="8">
+            <span id="disk_radius_val">8</span>
+        </label><br>
+
+        <label>
+            Velocity Noise:
+            <input type="range" id="velocity_noise" min="0" max="0.1" step="0.01" value="0.01">
+            <span id="velocity_noise_val">0.01</span>
+        </label><br>
+
         <button id="apply">Apply & Restart</button>
     </div>
+
+    <div id="core-panel">
+        <h3>Galactic Cores</h3>
+        <div id="core-list"></div>
+        <div id="core-panel-hint">Select a core to edit its individual parameters.</div>
+    </div>
+
     <script src="js/constants.js"></script>
     <script src="js/utils.js"></script>
     <script src="js/physics.js"></script>

@@ -28,18 +28,28 @@ function initialize_single_galaxy(N, disk_radius, central_mass, velocity_noise, 
     return { positions, velocities };
 }
 
-function build_multi_galaxy(core_pos_init, core_vel_init, n_per_core) {
+function build_multi_galaxy(core_pos_init, core_vel_init, core_particle_counts) {
     const C = core_pos_init.length;
-    const template = initialize_single_galaxy(n_per_core, disk_radius, CENTRAL_MASS, velocity_noise);
-    const block_size = template.positions.length;
 
     const positions = [];
     const velocities = [];
     const core_indices = new Array(C);
+    const block_sizes = new Array(C);
 
     for (let c = 0; c < C; c++) {
+        const particleCount = core_particle_counts[c];
+        const template = initialize_single_galaxy(
+            particleCount,
+            disk_radius,
+            CENTRAL_MASS,
+            velocity_noise
+        );
+
         const pos = template.positions.map(p => p.slice());
         const vel = template.velocities.map(v => v.slice());
+
+        core_indices[c] = positions.length;
+        block_sizes[c] = pos.length;
 
         // Offset disk + core
         pos.forEach(p => {
@@ -47,6 +57,7 @@ function build_multi_galaxy(core_pos_init, core_vel_init, n_per_core) {
             p[1] += core_pos_init[c][1];
             p[2] += core_pos_init[c][2];
         });
+
         // Override exact core position
         pos[0] = core_pos_init[c].slice();
 
@@ -56,14 +67,14 @@ function build_multi_galaxy(core_pos_init, core_vel_init, n_per_core) {
             v[1] += core_vel_init[c][1];
             v[2] += core_vel_init[c][2];
         });
+
         vel[0] = core_vel_init[c].slice();
 
-        core_indices[c] = c * block_size;
         positions.push(...pos);
         velocities.push(...vel);
     }
 
-    return { positions, velocities, core_indices, block_size };
+    return { positions, velocities, core_indices, block_sizes };
 }
 
 function make_core_params(C) {
