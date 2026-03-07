@@ -102,7 +102,6 @@ def smooth_colormap(t):
 
 LOG_MAX_RADIUS = math.log(DISK_RADIUS + 1e-6)
 
-
 # ----------------------------
 # Build multiple galaxies without touching particles.py
 # ----------------------------
