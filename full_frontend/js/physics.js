@@ -3,7 +3,6 @@
 function _accel_one_core(dx, dy, dz, m_bulge, a_bulge, m_disk, a_disk, b_disk, v_halo, r_core) {
     const x = dx, y = dy, z = dz;
     const r2 = x*x + y*y + z*z + SOFTENING*SOFTENING;
-    const r = Math.sqrt(r2) + 1e-12;
 
     // Bulge (Plummer)
     const denom_b = (r2 + a_bulge*a_bulge) ** 1.5;
@@ -43,7 +42,7 @@ function circular_velocity(x, y) {
 function compute_forces_multi(pos, core_pos, m_bulge, a_bulge, m_disk, a_disk, b_disk, v_halo, r_core) {
     const N = pos.length;
     const C = core_pos.length;
-    const forces = new Array(N).fill(0).map(() => [0,0,0]);
+    const forces = new Array(N).fill(0).map(() => [0, 0, 0]);
 
     const barycenter = mean_pos(core_pos);
 
@@ -55,10 +54,16 @@ function compute_forces_multi(pos, core_pos, m_bulge, a_bulge, m_disk, a_disk, b
             const dx = x - core_pos[c][0];
             const dy = y - core_pos[c][1];
             const dz = z - core_pos[c][2];
-            const [axt, ayt, azt] = _accel_one_core(dx, dy, dz,
+
+            const [axt, ayt, azt] = _accel_one_core(
+                dx, dy, dz,
                 m_bulge[c], a_bulge[c], m_disk[c], a_disk[c], b_disk[c],
-                v_halo[c], r_core[c]);
-            ax += axt; ay += ayt; az += azt;
+                v_halo[c], r_core[c]
+            );
+
+            ax += axt;
+            ay += ayt;
+            az += azt;
         }
 
         // Soft tether to barycenter
@@ -66,6 +71,7 @@ function compute_forces_multi(pos, core_pos, m_bulge, a_bulge, m_disk, a_disk, b
         const ty = y - barycenter[1];
         const tz = z - barycenter[2];
         const rr = Math.sqrt(tx*tx + ty*ty + tz*tz) + 1e-12;
+
         if (rr > r_max) {
             const factor = -k_tether * (rr - r_max);
             ax += factor * tx / rr;
@@ -75,11 +81,13 @@ function compute_forces_multi(pos, core_pos, m_bulge, a_bulge, m_disk, a_disk, b
 
         forces[i] = [ax, ay, az];
     }
+
     return forces;
 }
 
 function add_core_core_forces(forces, core_pos, core_masses, core_indices) {
     const C = core_pos.length;
+
     for (let a = 0; a < C; a++) {
         const ia = core_indices[a];
         const [xa, ya, za] = core_pos[a];
@@ -87,11 +95,14 @@ function add_core_core_forces(forces, core_pos, core_masses, core_indices) {
 
         for (let b = 0; b < C; b++) {
             if (b === a) continue;
+
             const dx = xa - core_pos[b][0];
             const dy = ya - core_pos[b][1];
             const dz = za - core_pos[b][2];
+
             const r2 = dx*dx + dy*dy + dz*dz + CORE_SOFTENING*CORE_SOFTENING;
             const inv_r3 = 1 / (r2 * Math.sqrt(r2) + 1e-12);
+
             ax -= G * core_masses[b] * dx * inv_r3;
             ay -= G * core_masses[b] * dy * inv_r3;
             az -= G * core_masses[b] * dz * inv_r3;

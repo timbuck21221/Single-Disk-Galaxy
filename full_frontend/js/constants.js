@@ -17,6 +17,8 @@ const CORE_POS_INIT = [[0.0, 0.0, 0.0], [18.0, 0.0, 0.0]];
 // Default simulation parameters
 let dt = 0.02;
 let physics_steps_per_frame = 2;
+let time_scale = 1.0;
+
 let disk_radius = 8.0;
 let velocity_noise = 0.01;
 let r_max = 120.0;
@@ -33,6 +35,89 @@ let CORE_MASSES = new Array(CORE_POS_INIT.length).fill(3500.0);
 let n_per_core = CORE_PARTICLE_COUNTS[0];
 let core_vel_scale = CORE_VEL_SCALES[0];
 let core_mass = CORE_MASSES[0];
+
+// ------------------------------
+// Gas particle system settings
+// ------------------------------
+const GAS_PARTICLES_ENABLED = true;
+
+// Initial cloud population per galaxy
+const GAS_INITIAL_CLOUDS_PER_GALAXY_MIN = 3;
+const GAS_INITIAL_CLOUDS_PER_GALAXY_MAX = 8;
+
+// Number of gas particles spawned by each cloud
+const GAS_PARTICLES_PER_CLOUD_MIN = 35;
+const GAS_PARTICLES_PER_CLOUD_MAX = 100;
+
+// Total mass assigned to each spawned cloud
+const GAS_CLOUD_MASS_MIN = 700.0;
+const GAS_CLOUD_MASS_MAX = 1400.0;
+
+// Initial gas-cluster radius around each generated cloud center
+const GAS_CLOUD_SPAWN_RADIUS_MIN = 0.85;
+const GAS_CLOUD_SPAWN_RADIUS_MAX = 1.35;
+
+// Orbital placement of cloud centers around each galaxy
+const GAS_CLOUD_ORBIT_RADIUS_MIN_FACTOR = 0.35;
+const GAS_CLOUD_ORBIT_RADIUS_MAX_FACTOR = 1.05;
+
+// Vertical spread for cloud center placement relative to disk thickness
+const GAS_CLOUD_CENTER_Z_STD = 0.18;
+
+// Random velocity offsets applied to particles within a cloud
+const GAS_CLOUD_INTERNAL_VEL_STD_XY = 0.02;
+const GAS_CLOUD_INTERNAL_VEL_STD_Z = 0.008;
+
+// Small drift added to whole cloud center velocity
+const GAS_CLOUD_BULK_DRIFT_STD_XY = 0.05;
+const GAS_CLOUD_BULK_DRIFT_STD_Z = 0.01;
+
+// Procedural cloud visual palette
+const GAS_CLOUD_COLOR_PALETTE = [
+    [120, 190, 255],
+    [255, 110, 150],
+    [150, 220, 255],
+    [180, 255, 210],
+    [255, 180, 120]
+];
+
+const GAS_CLOUD_OPACITY_MIN = 0.14;
+const GAS_CLOUD_OPACITY_MAX = 0.22;
+
+// Main neighborhood radius for gas-gas interaction
+// This is one of the main tuning knobs.
+const GAS_NEIGHBOR_RADIUS = 0.95;
+
+// Short-range repulsion radius inside the neighborhood
+const GAS_REPULSION_RADIUS = 0.24;
+
+// Attraction / repulsion strengths
+const GAS_ATTRACTION_STRENGTH = 3.6;
+const GAS_REPULSION_STRENGTH = 5.5;
+
+// Small local velocity-matching damping between nearby gas particles
+const GAS_ALIGNMENT_DAMPING = 0.075;
+
+// Mild overall gas damping to prevent noisy blow-up
+const GAS_GLOBAL_DAMPING = 0.0012;
+
+// Rendering
+const GAS_PARTICLE_BASE_SIZE = 1;
+const GAS_PARTICLE_DENSITY_SIZE_BOOST = 0.16;
+const GAS_PARTICLE_BASE_ALPHA = 0.24;
+const GAS_PARTICLE_DENSITY_ALPHA_BOOST = 0.018;
+const GAS_DENSITY_RENDER_RADIUS = 0.7;
+
+// Star formation
+// This is the second main tuning knob.
+const GAS_FORMATION_RADIUS = 0.42;
+const GAS_FORMATION_THRESHOLD = 20;
+const GAS_CONSUME_COUNT = 12;
+const GAS_MAX_STARS_PER_SUBSTEP = 1;
+
+// Star birth flash
+const STAR_BIRTH_FLASH_LIFETIME = 0.02;
+const STAR_BIRTH_FLASH_MAX_WORLD_RADIUS = 0.55;
 
 // Derived / state
 let log_max_radius = Math.log(disk_radius + 1e-6);

@@ -12,6 +12,10 @@ let core_set = new Set();
 let BLOCK_SIZE = 0;
 let C = 0;
 
+let GAS_PARTICLES = [];
+let gasParticleAcc = [];
+let STAR_BIRTH_FLASHES = [];
+
 let M_bulge, A_bulge, M_disk, A_disk, B_disk, V_halo, R_core;
 
 // null = no core selected, camera follows default system center
@@ -32,9 +36,7 @@ function syncLegacyCoreGlobals() {
 }
 
 function getDefaultCameraTarget() {
-    if (CORES.length > 0) {
-        return mean_pos(CORES);
-    }
+    if (CORES.length > 0) return mean_pos(CORES);
     return mean_pos(CORE_POS_INIT);
 }
 
@@ -79,9 +81,7 @@ function buildCoreInspectorUI() {
     for (let i = 0; i < CORE_POS_INIT.length; i++) {
         const item = document.createElement('div');
         item.className = 'core-item';
-        if (i === selectedCoreIndex) {
-            item.classList.add('selected');
-        }
+        if (i === selectedCoreIndex) item.classList.add('selected');
 
         const header = document.createElement('button');
         header.className = 'core-header';
@@ -195,13 +195,73 @@ function updateCoreHeaderMeta(coreIdx) {
         `Vel Scale: ${CORE_VEL_SCALES[coreIdx].toFixed(2)}`;
 }
 
+function addStarBirthFlashes(formedStars) {
+    for (let i = 0; i < formedStars.length; i++) {
+        STAR_BIRTH_FLASHES.push({
+            position: formedStars[i].position.slice(),
+            age: 0,
+            lifetime: STAR_BIRTH_FLASH_LIFETIME,
+            maxWorldRadius: STAR_BIRTH_FLASH_MAX_WORLD_RADIUS,
+            color: [255, 245, 185]
+        });
+    }
+}
+
+function updateStarBirthFlashes(dtStep) {
+    if (STAR_BIRTH_FLASHES.length === 0) return;
+
+    for (let i = STAR_BIRTH_FLASHES.length - 1; i >= 0; i--) {
+        STAR_BIRTH_FLASHES[i].age += dtStep;
+        if (STAR_BIRTH_FLASHES[i].age >= STAR_BIRTH_FLASHES[i].lifetime) {
+            STAR_BIRTH_FLASHES.splice(i, 1);
+        }
+    }
+}
+
+function buildStarBirthFlashRenderData(flashes, canvas, camera) {
+    if (!flashes || flashes.length === 0) return [];
+
+    const flashPositions = flashes.map(f => f.position);
+    const { projected, mask } = project(flashPositions, canvas, camera);
+    const basis = getCameraBasis(camera);
+
+    const renderData = [];
+
+    for (let i = 0; i < flashes.length; i++) {
+        if (!mask[i]) continue;
+
+        const flash = flashes[i];
+        const rel = [
+            flash.position[0] - basis.position[0],
+            flash.position[1] - basis.position[1],
+            flash.position[2] - basis.position[2]
+        ];
+
+        const zCam = vecDot(rel, basis.forward);
+        if (zCam <= camera.nearPlane) continue;
+
+        const progress = Math.max(0, Math.min(1, flash.age / flash.lifetime));
+        const screenMaxRadius = camera.focalLength * flash.maxWorldRadius / (zCam + 1e-6);
+
+        renderData.push({
+            screenX: projected[i][0],
+            screenY: projected[i][1],
+            progress,
+            screenMaxRadius,
+            color: flash.color
+        });
+    }
+
+    return renderData;
+}
+
 // Initialize simulation
 function init() {
     syncLegacyCoreGlobals();
 
     log_max_radius = Math.log(disk_radius + 1e-6);
 
-    // Compute circular orbit velocities for cores
+    // Two-core orbital initialization
     const dvec = [
         CORE_POS_INIT[1][0] - CORE_POS_INIT[0][0],
         CORE_POS_INIT[1][1] - CORE_POS_INIT[0][1],
@@ -242,6 +302,17 @@ function init() {
     V_halo = params.v_halo;
     R_core = params.r_core;
 
+    // Reset gas particles and flashes on restart
+    GAS_PARTICLES = spawn_initial_gas_particles(CORE_POS_INIT, CORE_VEL_INIT);
+    gasParticleAcc = compute_gas_particle_accelerations(
+        GAS_PARTICLES,
+        CORES,
+        M_bulge, A_bulge,
+        M_disk, A_disk, B_disk,
+        V_halo, R_core
+    );
+    STAR_BIRTH_FLASHES = [];
+
     forces = compute_forces_multi(
         positions, CORES,
         M_bulge, A_bulge,
@@ -263,15 +334,27 @@ function init() {
 
 // Physics step
 function update() {
+    const scaledDt = dt * time_scale;
+    if (scaledDt <= 0) return;
+
     for (let step = 0; step < physics_steps_per_frame; step++) {
+        while (forces.length < positions.length) {
+            forces.push([0, 0, 0]);
+        }
+
+        // Stellar particles remain collisionless tracers
         positions.forEach((p, i) => {
-            p[0] += velocities[i][0] * dt + 0.5 * forces[i][0] * dt**2;
-            p[1] += velocities[i][1] * dt + 0.5 * forces[i][1] * dt**2;
-            p[2] += velocities[i][2] * dt + 0.5 * forces[i][2] * dt**2;
+            p[0] += velocities[i][0] * scaledDt + 0.5 * forces[i][0] * scaledDt**2;
+            p[1] += velocities[i][1] * scaledDt + 0.5 * forces[i][1] * scaledDt**2;
+            p[2] += velocities[i][2] * scaledDt + 0.5 * forces[i][2] * scaledDt**2;
         });
+
+        // Gas particles
+        step_gas_particles(GAS_PARTICLES, gasParticleAcc, scaledDt);
 
         CORES = core_indices.map(i => positions[i].slice());
 
+        // Recompute stellar forces from galaxy potential only
         let new_forces = compute_forces_multi(
             positions, CORES,
             M_bulge, A_bulge,
@@ -285,13 +368,47 @@ function update() {
 
         add_core_core_forces(new_forces, CORES, CORE_MASSES, core_indices);
 
+        // Recompute gas particle accelerations
+        let newGasParticleAcc = compute_gas_particle_accelerations(
+            GAS_PARTICLES,
+            CORES,
+            M_bulge, A_bulge,
+            M_disk, A_disk, B_disk,
+            V_halo, R_core
+        );
+
+        // Velocity update for stars
         velocities.forEach((v, j) => {
-            v[0] += 0.5 * (forces[j][0] + new_forces[j][0]) * dt;
-            v[1] += 0.5 * (forces[j][1] + new_forces[j][1]) * dt;
-            v[2] += 0.5 * (forces[j][2] + new_forces[j][2]) * dt;
+            v[0] += 0.5 * (forces[j][0] + new_forces[j][0]) * scaledDt;
+            v[1] += 0.5 * (forces[j][1] + new_forces[j][1]) * scaledDt;
+            v[2] += 0.5 * (forces[j][2] + new_forces[j][2]) * scaledDt;
         });
 
+        // Velocity update for gas
+        finish_gas_particle_velocity_update(GAS_PARTICLES, gasParticleAcc, newGasParticleAcc, scaledDt);
+
+        // Star formation
+        const formationResult = form_stars_from_gas(GAS_PARTICLES, positions, velocities, new_forces);
+        GAS_PARTICLES = formationResult.gasParticles;
+        addStarBirthFlashes(formationResult.formedStars);
+
+        while (new_forces.length < positions.length) {
+            new_forces.push([0, 0, 0]);
+        }
+
+        // Refresh gas accelerations if gas count changed
+        newGasParticleAcc = compute_gas_particle_accelerations(
+            GAS_PARTICLES,
+            CORES,
+            M_bulge, A_bulge,
+            M_disk, A_disk, B_disk,
+            V_halo, R_core
+        );
+
+        updateStarBirthFlashes(scaledDt);
+
         forces = new_forces;
+        gasParticleAcc = newGasParticleAcc;
     }
 }
 
@@ -299,7 +416,12 @@ function update() {
 function setupControls() {
     document.getElementById('dt').addEventListener('input', e => {
         dt = parseFloat(e.target.value);
-        document.getElementById('dt_val').textContent = dt;
+        document.getElementById('dt_val').textContent = dt.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+    });
+
+    document.getElementById('time_scale').addEventListener('input', e => {
+        time_scale = parseFloat(e.target.value);
+        document.getElementById('time_scale_val').textContent = time_scale.toFixed(2);
     });
 
     document.getElementById('steps').addEventListener('input', e => {
@@ -351,8 +473,22 @@ function loop() {
 
     const { projected, mask } = project(positions, canvas, camera);
     const nearest_r = computeNearestRadii(positions, CORES, C);
+    const gasParticleRenderData = buildGasParticleRenderData(GAS_PARTICLES, canvas, camera);
+    const starBirthFlashRenderData = buildStarBirthFlashRenderData(STAR_BIRTH_FLASHES, canvas, camera);
 
-    render(canvas, ctx, positions, CORES, core_indices, core_set, mask, projected, nearest_r);
+    render(
+        canvas,
+        ctx,
+        positions,
+        CORES,
+        core_indices,
+        core_set,
+        mask,
+        projected,
+        nearest_r,
+        gasParticleRenderData,
+        starBirthFlashRenderData
+    );
 
     requestAnimationFrame(loop);
 }

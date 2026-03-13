@@ -14,8 +14,14 @@
 
         <label>
             DT:
-            <input type="range" id="dt" min="0.01" max="0.1" step="0.01" value="0.02">
+            <input type="range" id="dt" min="0.005" max="0.1" step="0.005" value="0.02">
             <span id="dt_val">0.02</span>
+        </label><br>
+
+        <label>
+            Time Scale:
+            <input type="range" id="time_scale" min="0.01" max="1" step="0.01" value="1.00">
+            <span id="time_scale_val">1.00</span>
         </label><br>
 
         <label>
@@ -75,6 +81,7 @@
     <script src="js/utils.js"></script>
     <script src="js/physics.js"></script>
     <script src="js/particles.js"></script>
+    <script src="js/gasclouds.js"></script>
     <script src="js/camera.js"></script>
     <script src="js/rendering.js"></script>
     <script src="js/main.js"></script>
