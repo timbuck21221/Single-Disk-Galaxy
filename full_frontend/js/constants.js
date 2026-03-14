@@ -111,7 +111,7 @@ const GAS_INITIAL_CLOUDS_PER_GALAXY_MAX = 8;
 
 // Number of gas particles spawned by each cloud
 const GAS_PARTICLES_PER_CLOUD_MIN = 35;
-const GAS_PARTICLES_PER_CLOUD_MAX = 100;
+const GAS_PARTICLES_PER_CLOUD_MAX = 75;
 
 // Total mass assigned to each spawned cloud
 const GAS_CLOUD_MASS_MIN = 700.0;
