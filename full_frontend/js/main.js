@@ -12,6 +12,8 @@ let core_set = new Set();
 let BLOCK_SIZE = 0;
 let C = 0;
 
+let STAR_PARTICLE_DATA = [];
+
 let GAS_PARTICLES = [];
 let gasParticleAcc = [];
 let STAR_BIRTH_FLASHES = [];
@@ -287,6 +289,7 @@ function init() {
     const res = build_multi_galaxy(CORE_POS_INIT, CORE_VEL_INIT, CORE_PARTICLE_COUNTS);
     positions = res.positions;
     velocities = res.velocities;
+    STAR_PARTICLE_DATA = res.star_particle_data;
     core_indices = res.core_indices;
     BLOCK_SIZE = res.block_sizes[0] || 0;
     C = CORE_POS_INIT.length;
@@ -388,7 +391,14 @@ function update() {
         finish_gas_particle_velocity_update(GAS_PARTICLES, gasParticleAcc, newGasParticleAcc, scaledDt);
 
         // Star formation
-        const formationResult = form_stars_from_gas(GAS_PARTICLES, positions, velocities, new_forces);
+        const formationResult = form_stars_from_gas(
+            GAS_PARTICLES,
+            positions,
+            velocities,
+            new_forces,
+            STAR_PARTICLE_DATA,
+            CORES
+        );
         GAS_PARTICLES = formationResult.gasParticles;
         addStarBirthFlashes(formationResult.formedStars);
 
@@ -448,6 +458,10 @@ function setupControls() {
         document.getElementById('trail_fade_val').textContent = e.target.value;
     });
 
+    document.getElementById('star_render_mode').addEventListener('change', e => {
+        star_render_mode = e.target.value;
+    });
+
     document.getElementById('disk_radius').addEventListener('input', e => {
         disk_radius = parseFloat(e.target.value);
         document.getElementById('disk_radius_val').textContent = e.target.value;
@@ -486,6 +500,8 @@ function loop() {
         mask,
         projected,
         nearest_r,
+        STAR_PARTICLE_DATA,
+        star_render_mode,
         gasParticleRenderData,
         starBirthFlashRenderData
     );

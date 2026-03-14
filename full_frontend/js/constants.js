@@ -37,6 +37,70 @@ let core_vel_scale = CORE_VEL_SCALES[0];
 let core_mass = CORE_MASSES[0];
 
 // ------------------------------
+// Star system settings
+// ------------------------------
+const STAR_RENDER_MODE_CORE_DISTANCE = 'core_distance';
+const STAR_RENDER_MODE_STAR_TYPE = 'star_type';
+let star_render_mode = STAR_RENDER_MODE_CORE_DISTANCE;
+
+const STAR_TYPE_BROWN_DWARF = 'brown_dwarf';
+const STAR_TYPE_LOW_MASS = 'low_mass_star';
+const STAR_TYPE_MAIN_SEQUENCE = 'main_sequence_star';
+const STAR_TYPE_MASSIVE = 'massive_star';
+
+// Simulation-unit mass thresholds used for classification
+const STAR_MASS_BROWN_DWARF_MAX = 20.0;
+const STAR_MASS_LOW_MASS_MAX = 80.0;
+const STAR_MASS_MAIN_SEQUENCE_MAX = 180.0;
+
+// Weighted initial mass generation buckets
+const STAR_INIT_MASS_BROWN_DWARF_MIN = 6.0;
+const STAR_INIT_MASS_BROWN_DWARF_MAX = 20.0;
+
+const STAR_INIT_MASS_LOW_MASS_MIN = 20.0;
+const STAR_INIT_MASS_LOW_MASS_MAX = 80.0;
+
+const STAR_INIT_MASS_MAIN_SEQUENCE_MIN = 80.0;
+const STAR_INIT_MASS_MAIN_SEQUENCE_MAX = 180.0;
+
+const STAR_INIT_MASS_MASSIVE_MIN = 180.0;
+const STAR_INIT_MASS_MASSIVE_MAX = 360.0;
+
+// Relative probabilities for initial star population
+const STAR_INIT_WEIGHT_BROWN_DWARF = 0.22;
+const STAR_INIT_WEIGHT_LOW_MASS = 0.50;
+const STAR_INIT_WEIGHT_MAIN_SEQUENCE = 0.22;
+const STAR_INIT_WEIGHT_MASSIVE = 0.06;
+
+// Raw metadata defaults
+const STAR_METALLICITY_MIN = 0.008;
+const STAR_METALLICITY_MAX = 0.030;
+
+// Visual tuning
+const STAR_SIZE_MIN = 1.0;
+const STAR_SIZE_MAX = 4.4;
+
+const STAR_BASE_RADIUS_BROWN_DWARF = 1.00;
+const STAR_BASE_RADIUS_LOW_MASS = 1.20;
+const STAR_BASE_RADIUS_MAIN_SEQUENCE = 1.50;
+const STAR_BASE_RADIUS_MASSIVE = 1.95;
+
+const STAR_MASS_RADIUS_FACTOR_BROWN_DWARF = 0.16;
+const STAR_MASS_RADIUS_FACTOR_LOW_MASS = 0.19;
+const STAR_MASS_RADIUS_FACTOR_MAIN_SEQUENCE = 0.22;
+const STAR_MASS_RADIUS_FACTOR_MASSIVE = 0.27;
+
+const STAR_COLOR_BROWN_DWARF = [175, 95, 95];
+const STAR_COLOR_LOW_MASS = [255, 195, 120];
+const STAR_COLOR_MAIN_SEQUENCE = [255, 245, 210];
+const STAR_COLOR_MASSIVE = [170, 215, 255];
+
+const STAR_GLOW_ALPHA_BROWN_DWARF = 0.07;
+const STAR_GLOW_ALPHA_LOW_MASS = 0.10;
+const STAR_GLOW_ALPHA_MAIN_SEQUENCE = 0.13;
+const STAR_GLOW_ALPHA_MASSIVE = 0.18;
+
+// ------------------------------
 // Gas particle system settings
 // ------------------------------
 const GAS_PARTICLES_ENABLED = true;
@@ -85,7 +149,6 @@ const GAS_CLOUD_OPACITY_MIN = 0.14;
 const GAS_CLOUD_OPACITY_MAX = 0.22;
 
 // Main neighborhood radius for gas-gas interaction
-// This is one of the main tuning knobs.
 const GAS_NEIGHBOR_RADIUS = 0.95;
 
 // Short-range repulsion radius inside the neighborhood
@@ -104,12 +167,11 @@ const GAS_GLOBAL_DAMPING = 0.0012;
 // Rendering
 const GAS_PARTICLE_BASE_SIZE = 1;
 const GAS_PARTICLE_DENSITY_SIZE_BOOST = 0.16;
-const GAS_PARTICLE_BASE_ALPHA = 0.24;
+const GAS_PARTICLE_BASE_ALPHA = 0.20;
 const GAS_PARTICLE_DENSITY_ALPHA_BOOST = 0.018;
-const GAS_DENSITY_RENDER_RADIUS = 0.7;
+const GAS_DENSITY_RENDER_RADIUS = 0.6;
 
 // Star formation
-// This is the second main tuning knob.
 const GAS_FORMATION_RADIUS = 0.42;
 const GAS_FORMATION_THRESHOLD = 20;
 const GAS_CONSUME_COUNT = 12;

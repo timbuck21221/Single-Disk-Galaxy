@@ -1,5 +1,15 @@
 // Rendering logic
 
+function get_star_render_color(starData, nearestRadius, renderMode) {
+    if (renderMode === STAR_RENDER_MODE_CORE_DISTANCE) {
+        const t = Math.log(nearestRadius) / log_max_radius;
+        const tt = Math.max(0, Math.min(1, t));
+        return smooth_colormap(tt);
+    }
+
+    return get_star_visual_profile(starData).color;
+}
+
 function render(
     canvas,
     ctx,
@@ -10,6 +20,8 @@ function render(
     mask,
     projected,
     nearest_r,
+    starParticleData,
+    starRenderMode,
     gasParticleRenderData = [],
     starBirthFlashRenderData = []
 ) {
@@ -28,15 +40,30 @@ function render(
     for (let i = 0; i < positions.length; i++) {
         if (!mask[i] || core_set.has(i)) continue;
 
+        const starData = starParticleData[i];
         const [px, py] = projected[i];
-        const t = Math.log(nearest_r[i]) / log_max_radius;
-        const tt = Math.max(0, Math.min(1, t));
-        const [r, g, b] = smooth_colormap(tt);
+        const [r, g, b] = get_star_render_color(starData, nearest_r[i], starRenderMode);
+        const radius = compute_star_screen_radius(starData);
+        const glowAlpha = get_star_visual_profile(starData).glowAlpha;
+
+        if (starRenderMode === STAR_RENDER_MODE_STAR_TYPE) {
+            ctx.beginPath();
+            ctx.arc(px, py, radius * 2.2, 0, 2 * Math.PI);
+            ctx.fillStyle = `rgba(${r},${g},${b},${glowAlpha})`;
+            ctx.fill();
+        }
 
         ctx.beginPath();
-        ctx.arc(px, py, PARTICLE_SIZE, 0, 2 * Math.PI);
+        ctx.arc(px, py, radius, 0, 2 * Math.PI);
         ctx.fillStyle = `rgb(${r},${g},${b})`;
         ctx.fill();
+
+        if (starRenderMode === STAR_RENDER_MODE_STAR_TYPE) {
+            ctx.beginPath();
+            ctx.arc(px, py, Math.max(0.65, radius * 0.42), 0, 2 * Math.PI);
+            ctx.fillStyle = 'rgba(255,255,255,0.34)';
+            ctx.fill();
+        }
     }
 
     // Galactic cores

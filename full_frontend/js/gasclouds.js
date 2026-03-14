@@ -34,10 +34,6 @@ function randIntInclusive(min, max) {
     return min + Math.floor(Math.random() * (max - min + 1));
 }
 
-function randRange(min, max) {
-    return min + Math.random() * (max - min);
-}
-
 function pickRandomColor(palette) {
     return palette[Math.floor(Math.random() * palette.length)].slice();
 }
@@ -275,7 +271,7 @@ function estimate_gas_neighbor_counts(gasParticles, radius) {
     return counts;
 }
 
-function form_stars_from_gas(gasParticles, positions, velocities, forceArray) {
+function form_stars_from_gas(gasParticles, positions, velocities, forceArray, starParticleData, corePositions) {
     if (!gasParticles || gasParticles.length < GAS_CONSUME_COUNT) {
         return { gasParticles, formedStars: [] };
     }
@@ -320,6 +316,7 @@ function form_stars_from_gas(gasParticles, positions, velocities, forceArray) {
         let totalMass = 0.0;
         let px = 0.0, py = 0.0, pz = 0.0;
         let vx = 0.0, vy = 0.0, vz = 0.0;
+        let metallicityAccum = 0.0;
 
         for (let k = 0; k < selected.length; k++) {
             const gp = gasParticles[selected[k].index];
@@ -330,14 +327,20 @@ function form_stars_from_gas(gasParticles, positions, velocities, forceArray) {
             vx += gp.velocity[0] * gp.mass;
             vy += gp.velocity[1] * gp.mass;
             vz += gp.velocity[2] * gp.mass;
+            metallicityAccum += sample_star_metallicity() * gp.mass;
         }
 
         const newStarPos = [px / totalMass, py / totalMass, pz / totalMass];
         const newStarVel = [vx / totalMass, vy / totalMass, vz / totalMass];
+        const nearestCoreIndex = findNearestCoreIndex(newStarPos, corePositions);
+        const metallicity = metallicityAccum / totalMass;
 
         positions.push(newStarPos);
         velocities.push(newStarVel);
         forceArray.push([0, 0, 0]);
+        starParticleData.push(
+            create_star_particle_data(totalMass, 'gas_formed', metallicity, nearestCoreIndex)
+        );
 
         formedStars.push({
             position: newStarPos.slice(),
