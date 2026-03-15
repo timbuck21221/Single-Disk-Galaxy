@@ -87,7 +87,30 @@ function clearStarSpriteCache() {
     STAR_SPRITE_CACHE.clear();
 }
 
+function getSupernovaSceneIntensity(supernovaRenderData) {
+    if (!supernovaRenderData || supernovaRenderData.length === 0) return 0.0;
+
+    let combinedIntensity = 0.0;
+
+    for (let i = 0; i < supernovaRenderData.length; i++) {
+        const ev = supernovaRenderData[i];
+        const progress = clamp01(ev.progress);
+        const intensity = Math.pow(1.0 - progress, SUPERNOVA_SCENE_DIM_EXPONENT);
+        combinedIntensity += intensity;
+    }
+
+    return clamp01(combinedIntensity);
+}
+
+function isSupernovaRemnantStar(starData) {
+    return !!(starData && starData.isActive && starData.hasSupernovaTriggered);
+}
+
 function get_star_render_color(starData, nearestRadius, renderMode) {
+    if (isSupernovaRemnantStar(starData)) {
+        return SUPERNOVA_REMNANT_WHITE_COLOR.slice();
+    }
+
     if (renderMode === STAR_RENDER_MODE_CORE_DISTANCE) {
         const t = Math.log(nearestRadius) / log_max_radius;
         const tt = Math.max(0, Math.min(1, t));
@@ -95,6 +118,18 @@ function get_star_render_color(starData, nearestRadius, renderMode) {
     }
 
     return get_star_visual_profile(starData).color;
+}
+
+function renderStarParticle(ctx, px, py, radius, color, glowAlpha, starRenderMode) {
+    if (starRenderMode === STAR_RENDER_MODE_STAR_TYPE) {
+        const sprite = getStarSprite(color, radius, glowAlpha, starRenderMode);
+        ctx.drawImage(sprite.canvas, px - sprite.halfW, py - sprite.halfH);
+    } else {
+        ctx.beginPath();
+        ctx.arc(px, py, radius, 0, 2 * Math.PI);
+        ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
+        ctx.fill();
+    }
 }
 
 function render(
@@ -110,7 +145,8 @@ function render(
     starParticleData,
     starRenderMode,
     gasParticleRenderData = [],
-    starBirthFlashRenderData = []
+    starBirthFlashRenderData = [],
+    supernovaRenderData = []
 ) {
     if (enable_trails) {
         ctx.fillStyle = `rgba(0,0,0,${trail_fade})`;
@@ -121,11 +157,15 @@ function render(
 
     renderGasParticles(ctx, gasParticleRenderData);
 
+    // Render normal stars first so the scene-dim overlay can suppress them.
     for (let i = 0; i < positions.length; i++) {
         if (!mask[i] || core_set.has(i)) continue;
 
-        const [px, py] = projected[i];
         const starData = starParticleData[i];
+        if (!starData || !starData.isActive) continue;
+        if (isSupernovaRemnantStar(starData)) continue;
+
+        const [px, py] = projected[i];
         const radius = compute_star_screen_radius(starData);
 
         const approxCullR = radius * 2.8;
@@ -140,15 +180,7 @@ function render(
         const profile = get_star_visual_profile(starData);
         const glowAlpha = profile.glowAlpha;
 
-        if (starRenderMode === STAR_RENDER_MODE_STAR_TYPE) {
-            const sprite = getStarSprite(color, radius, glowAlpha, starRenderMode);
-            ctx.drawImage(sprite.canvas, px - sprite.halfW, py - sprite.halfH);
-        } else {
-            ctx.beginPath();
-            ctx.arc(px, py, radius, 0, 2 * Math.PI);
-            ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
-            ctx.fill();
-        }
+        renderStarParticle(ctx, px, py, radius, color, glowAlpha, starRenderMode);
     }
 
     core_indices.forEach(ci => {
@@ -166,6 +198,34 @@ function render(
     });
 
     renderStarBirthFlashes(ctx, starBirthFlashRenderData);
+
+    // Dim the whole scene to make the supernova white point feel blinding.
+    renderSupernovaEvents(ctx, supernovaRenderData, canvas);
+
+    // Render supernova remnants after dimming so they remain the brightest point.
+    for (let i = 0; i < positions.length; i++) {
+        if (!mask[i] || core_set.has(i)) continue;
+
+        const starData = starParticleData[i];
+        if (!isSupernovaRemnantStar(starData)) continue;
+
+        const [px, py] = projected[i];
+        const baseRadius = compute_star_screen_radius(starData);
+        const radius = baseRadius + SUPERNOVA_REMNANT_FLASH_RADIUS_BOOST;
+
+        const approxCullR = radius * 3.2;
+        if (
+            px < -approxCullR || px > canvas.width + approxCullR ||
+            py < -approxCullR || py > canvas.height + approxCullR
+        ) {
+            continue;
+        }
+
+        const color = SUPERNOVA_REMNANT_WHITE_COLOR.slice();
+        const glowAlpha = SUPERNOVA_REMNANT_FLASH_GLOW_ALPHA;
+
+        renderStarParticle(ctx, px, py, radius, color, glowAlpha, STAR_RENDER_MODE_STAR_TYPE);
+    }
 }
 
 function renderGasParticles(ctx, gasParticleRenderData) {
@@ -174,6 +234,7 @@ function renderGasParticles(ctx, gasParticleRenderData) {
     for (let i = 0; i < gasParticleRenderData.length; i++) {
         const gp = gasParticleRenderData[i];
         const [r, g, b] = gp.color;
+        const hotness = gp.hotness || 0.0;
 
         const densityFactor = Math.max(0, Math.min(1, gp.density / Math.max(GAS_FORMATION_THRESHOLD, 1)));
 
@@ -185,13 +246,17 @@ function renderGasParticles(ctx, gasParticleRenderData) {
         const densityHazeBoost = 0.06 * densityFactor;
         const densityOuterBoost = 0.025 * densityFactor;
 
-        const mainAlpha = Math.min(0.42, baseMainAlpha + densityMainBoost);
-        const hazeAlpha = Math.min(0.14, baseHazeAlpha + densityHazeBoost);
-        const outerAlpha = Math.min(0.06, baseOuterAlpha + densityOuterBoost);
+        const heatMainBoost = 0.24 * hotness;
+        const heatHazeBoost = 0.18 * hotness;
+        const heatOuterBoost = 0.12 * hotness;
+
+        const mainAlpha = Math.min(0.90, baseMainAlpha + densityMainBoost + heatMainBoost);
+        const hazeAlpha = Math.min(0.48, baseHazeAlpha + densityHazeBoost + heatHazeBoost);
+        const outerAlpha = Math.min(0.26, baseOuterAlpha + densityOuterBoost + heatOuterBoost);
 
         const mainSize = gp.size;
-        const hazeSize = gp.size * (2.1 + 0.2 * densityFactor);
-        const outerSize = gp.size * (3.2 + 0.3 * densityFactor);
+        const hazeSize = gp.size * (2.1 + 0.2 * densityFactor + 0.55 * hotness);
+        const outerSize = gp.size * (3.2 + 0.3 * densityFactor + 1.05 * hotness);
 
         ctx.beginPath();
         ctx.arc(gp.screenX, gp.screenY, outerSize, 0, 2 * Math.PI);
@@ -208,7 +273,13 @@ function renderGasParticles(ctx, gasParticleRenderData) {
         ctx.fillStyle = `rgba(${r},${g},${b},${mainAlpha})`;
         ctx.fill();
 
-        if (gp.density >= GAS_FORMATION_THRESHOLD - 3) {
+        if (hotness > 0.08) {
+            const hotCoreAlpha = Math.min(0.85, 0.28 + hotness * 0.55);
+            ctx.beginPath();
+            ctx.arc(gp.screenX, gp.screenY, Math.max(0.95, gp.size * (0.58 + 0.18 * hotness)), 0, 2 * Math.PI);
+            ctx.fillStyle = `rgba(255,245,232,${hotCoreAlpha})`;
+            ctx.fill();
+        } else if (gp.density >= GAS_FORMATION_THRESHOLD - 3) {
             const coreAlpha = Math.min(0.22, 0.06 + 0.12 * densityFactor);
 
             ctx.beginPath();
@@ -241,6 +312,19 @@ function renderStarBirthFlashes(ctx, starBirthFlashRenderData) {
         ctx.fillStyle = `rgba(255,255,255,${innerAlpha})`;
         ctx.fill();
     }
+}
+
+function renderSupernovaEvents(ctx, supernovaRenderData, canvas) {
+    const screenIntensity = getSupernovaSceneIntensity(supernovaRenderData);
+    if (screenIntensity <= 0.001) return;
+
+    const dimAlpha = Math.min(
+        SUPERNOVA_SCENE_DIM_STRENGTH,
+        screenIntensity * SUPERNOVA_SCENE_DIM_STRENGTH
+    );
+
+    ctx.fillStyle = `rgba(0,0,0,${dimAlpha})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
 function computeNearestRadii(positions, CORES, C) {

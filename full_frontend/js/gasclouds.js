@@ -1,13 +1,27 @@
 // gasclouds.js – clustered gas particle system with local gas-only interactions
 
-function make_gas_particle(position, velocity, mass, color = [120, 190, 255], opacity = 0.18, sourceId = 0) {
+function make_gas_particle(
+    position,
+    velocity,
+    mass,
+    color = [120, 190, 255],
+    opacity = 0.18,
+    sourceId = 0,
+    heat = 0.0,
+    heatLifetime = 0.0,
+    hotColor = null
+) {
     return {
         position: position.slice(),
         velocity: velocity.slice(),
         mass,
         color: color.slice(),
         opacity,
-        sourceId
+        sourceId,
+        heat,
+        heatAge: 0.0,
+        heatLifetime,
+        hotColor: hotColor ? hotColor.slice() : null
     };
 }
 
@@ -38,6 +52,35 @@ function pickRandomColor(palette) {
     return palette[Math.floor(Math.random() * palette.length)].slice();
 }
 
+function mixRgb(colorA, colorB, t) {
+    const tt = Math.max(0, Math.min(1, t));
+    return [
+        Math.round(colorA[0] + (colorB[0] - colorA[0]) * tt),
+        Math.round(colorA[1] + (colorB[1] - colorA[1]) * tt),
+        Math.round(colorA[2] + (colorB[2] - colorA[2]) * tt)
+    ];
+}
+
+function getGasParticleHeatFactor(gp) {
+    if (!gp || !gp.heat || !gp.heatLifetime || gp.heatLifetime <= 0) return 0.0;
+    return Math.max(0, 1.0 - gp.heatAge / gp.heatLifetime) * gp.heat;
+}
+
+function update_supernova_ejecta_heat(gasParticles, dtStep) {
+    if (!gasParticles || gasParticles.length === 0) return;
+
+    for (let i = 0; i < gasParticles.length; i++) {
+        const gp = gasParticles[i];
+        if (!gp || !gp.heat || gp.heat <= 0 || !gp.heatLifetime || gp.heatLifetime <= 0) continue;
+
+        gp.heatAge += dtStep;
+        if (gp.heatAge >= gp.heatLifetime) {
+            gp.heat = 0.0;
+            gp.heatAge = gp.heatLifetime;
+        }
+    }
+}
+
 function makeProceduralGasCloudSeed(coreIndex, corePositions, coreVelocities, sourceId) {
     const corePos = corePositions[coreIndex];
     const coreVel = coreVelocities[coreIndex];
@@ -61,7 +104,6 @@ function makeProceduralGasCloudSeed(coreIndex, corePositions, coreVelocities, so
         center[1] - corePos[1]
     );
 
-    // Match stellar tracer rotation direction
     const orbitalVelocity = [
         -vCirc * Math.sin(theta) + coreVel[0],
          vCirc * Math.cos(theta) + coreVel[1],
@@ -146,10 +188,63 @@ function spawn_initial_gas_particles(corePositions, coreVelocities) {
     return gasParticles;
 }
 
+function spawn_supernova_gas_particles(position, velocity, totalGasMass, sourceId) {
+    if (totalGasMass <= 0) return [];
+
+    const count = randIntInclusive(
+        SUPERNOVA_EJECTA_PARTICLE_COUNT_MIN,
+        SUPERNOVA_EJECTA_PARTICLE_COUNT_MAX
+    );
+    const perParticleMass = totalGasMass / count;
+    const opacity = randRange(SUPERNOVA_EJECTA_OPACITY_MIN, SUPERNOVA_EJECTA_OPACITY_MAX);
+
+    const ejecta = [];
+
+    for (let i = 0; i < count; i++) {
+        const a = Math.random() * 2 * Math.PI;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const rr = randRange(SUPERNOVA_EJECTA_SPAWN_RADIUS_MIN, SUPERNOVA_EJECTA_SPAWN_RADIUS_MAX);
+
+        const nx = Math.sin(phi) * Math.cos(a);
+        const ny = Math.sin(phi) * Math.sin(a);
+        const nz = Math.cos(phi);
+
+        const pos = [
+            position[0] + rr * nx,
+            position[1] + rr * ny,
+            position[2] + rr * nz * 0.8
+        ];
+
+        const ejectSpeed = randRange(SUPERNOVA_EJECTA_SPEED_MIN, SUPERNOVA_EJECTA_SPEED_MAX);
+        const vel = [
+            velocity[0] + nx * ejectSpeed + gaussian(0, 0.15),
+            velocity[1] + ny * ejectSpeed + gaussian(0, 0.15),
+            velocity[2] + nz * ejectSpeed + gaussian(0, 0.08)
+        ];
+
+        const baseColor = pickRandomColor(SUPERNOVA_EJECTA_COLOR_PALETTE);
+
+        ejecta.push(
+            make_gas_particle(
+                pos,
+                vel,
+                perParticleMass,
+                baseColor,
+                opacity,
+                sourceId,
+                1.0,
+                randRange(SUPERNOVA_EJECTA_HEAT_LIFETIME_MIN, SUPERNOVA_EJECTA_HEAT_LIFETIME_MAX),
+                SUPERNOVA_EJECTA_HOT_COLOR
+            )
+        );
+    }
+
+    return ejecta;
+}
+
 function compute_gas_particle_accelerations(gasParticles, core_pos, m_bulge, a_bulge, m_disk, a_disk, b_disk, v_halo, r_core) {
     const acc = new Array(gasParticles.length).fill(0).map(() => [0, 0, 0]);
 
-    // Core / galaxy gravity
     for (let i = 0; i < gasParticles.length; i++) {
         const gp = gasParticles[i];
         let ax = 0.0, ay = 0.0, az = 0.0;
@@ -179,7 +274,6 @@ function compute_gas_particle_accelerations(gasParticles, core_pos, m_bulge, a_b
         acc[i][2] = az;
     }
 
-    // Local gas-gas interaction
     for (let i = 0; i < gasParticles.length; i++) {
         for (let j = i + 1; j < gasParticles.length; j++) {
             const a = gasParticles[i];
@@ -375,17 +469,28 @@ function buildGasParticleRenderData(gasParticles, canvas, camera) {
     for (let i = 0; i < gasParticles.length; i++) {
         if (!mask[i]) continue;
 
+        const gp = gasParticles[i];
         const density = densityCounts[i];
-        const size = GAS_PARTICLE_BASE_SIZE + density * GAS_PARTICLE_DENSITY_SIZE_BOOST;
-        const alpha = Math.min(0.9, gasParticles[i].opacity + density * GAS_PARTICLE_DENSITY_ALPHA_BOOST);
+        const heatFactor = getGasParticleHeatFactor(gp);
+
+        const baseSize = GAS_PARTICLE_BASE_SIZE + density * GAS_PARTICLE_DENSITY_SIZE_BOOST;
+        const size = baseSize + heatFactor * SUPERNOVA_EJECTA_HEAT_SIZE_BOOST;
+
+        const baseAlpha = Math.min(0.9, gp.opacity + density * GAS_PARTICLE_DENSITY_ALPHA_BOOST);
+        const alpha = Math.min(0.98, baseAlpha + heatFactor * SUPERNOVA_EJECTA_HEAT_ALPHA_BOOST);
+
+        const color = heatFactor > 0 && gp.hotColor
+            ? mixRgb(gp.color, gp.hotColor, Math.min(1.0, heatFactor))
+            : gp.color.slice();
 
         renderData.push({
             screenX: projected[i][0],
             screenY: projected[i][1],
             size,
             alpha,
-            color: gasParticles[i].color,
-            density
+            color,
+            density,
+            hotness: heatFactor
         });
     }
 

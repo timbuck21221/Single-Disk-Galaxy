@@ -70,6 +70,7 @@ function create_star_particle_data(mass, origin = 'initial', metallicity = null,
         currentMass: mass,
         metallicity: resolvedMetallicity,
         age: 0.0,
+        stageAge: 0.0,
         origin,
         sourceCoreIndex,
         birthClass,
@@ -77,7 +78,10 @@ function create_star_particle_data(mass, origin = 'initial', metallicity = null,
         evolutionTriggered: false,
         evolutionTargetType: get_star_branch_target_type(birthClass),
         evolutionTargetMass: get_star_target_mass(birthClass, mass),
-        canExplodeLater: birthClass === STAR_TYPE_MASSIVE
+        canExplodeLater: birthClass === STAR_TYPE_MASSIVE,
+        isActive: true,
+        isRemnant: false,
+        hasSupernovaTriggered: false
     };
 }
 
@@ -103,11 +107,28 @@ function sample_initial_star_mass() {
     return randRange(STAR_INIT_MASS_MASSIVE_MIN, STAR_INIT_MASS_MASSIVE_MAX);
 }
 
+function maybe_trigger_supernova(starData, dtStep) {
+    if (!starData || !starData.isActive) return false;
+    if (!starData.canExplodeLater) return false;
+    if (starData.hasSupernovaTriggered) return false;
+    if (starData.starType !== STAR_TYPE_RED_SUPERGIANT) return false;
+    if (starData.stageAge < STAR_SUPERNOVA_STAGE_AGE_RED_SUPERGIANT) return false;
+
+    const perStepChance = 1.0 - Math.exp(
+        -STAR_SUPERNOVA_CHANCE_RATE_RED_SUPERGIANT * dtStep * STAR_AGE_RATE
+    );
+
+    return Math.random() < perStepChance;
+}
+
 function evolve_star_mass_and_type(starData, dtStep) {
-    if (!starData) return;
-    if (starData.birthClass === STAR_TYPE_BROWN_DWARF) return;
+    if (!starData) return false;
+    if (!starData.isActive) return false;
+    if (starData.birthClass === STAR_TYPE_BROWN_DWARF) return false;
+    if (starData.isRemnant) return false;
 
     starData.age += dtStep * STAR_AGE_RATE;
+    starData.stageAge += dtStep * STAR_AGE_RATE;
 
     if (!starData.evolutionTriggered) {
         const ageThreshold = get_star_evolution_age_threshold(starData.birthClass);
@@ -117,42 +138,78 @@ function evolve_star_mass_and_type(starData, dtStep) {
             if (Math.random() < perStepChance) {
                 starData.evolutionTriggered = true;
                 starData.starType = starData.evolutionTargetType;
+                starData.stageAge = 0.0;
             }
         }
     }
 
-    if (!starData.evolutionTriggered) return;
+    if (starData.evolutionTriggered) {
+        let growthRate = 0.0;
 
-    let growthRate = 0.0;
-    if (starData.starType === STAR_TYPE_RED_GIANT) {
-        growthRate = STAR_GIANT_MASS_GROWTH_RATE;
-    } else if (starData.starType === STAR_TYPE_RED_SUPERGIANT) {
-        growthRate = STAR_SUPERGIANT_MASS_GROWTH_RATE;
+        if (starData.starType === STAR_TYPE_RED_GIANT) {
+            growthRate = STAR_GIANT_MASS_GROWTH_RATE;
+        } else if (starData.starType === STAR_TYPE_RED_SUPERGIANT) {
+            growthRate = STAR_SUPERGIANT_MASS_GROWTH_RATE;
+        }
+
+        if (growthRate > 0.0) {
+            const targetMass = starData.evolutionTargetMass;
+            if (starData.currentMass >= targetMass) {
+                starData.currentMass = targetMass;
+            } else {
+                const delta = growthRate * starData.birthMass * dtStep * STAR_AGE_RATE;
+                starData.currentMass = Math.min(targetMass, starData.currentMass + delta);
+            }
+        }
     }
 
-    if (growthRate <= 0.0) return;
-
-    const targetMass = starData.evolutionTargetMass;
-    if (starData.currentMass >= targetMass) {
-        starData.currentMass = targetMass;
-        return;
-    }
-
-    const delta = growthRate * starData.birthMass * dtStep * STAR_AGE_RATE;
-    starData.currentMass = Math.min(targetMass, starData.currentMass + delta);
+    return maybe_trigger_supernova(starData, dtStep);
 }
 
 function update_all_star_lifecycles(starParticleData, coreSet) {
-    if (!starParticleData || starParticleData.length === 0) return;
+    const supernovaCandidates = [];
+    if (!starParticleData || starParticleData.length === 0) return supernovaCandidates;
 
     const scaledDt = dt * time_scale;
-    if (scaledDt <= 0) return;
+    if (scaledDt <= 0) return supernovaCandidates;
 
     for (let i = 0; i < starParticleData.length; i++) {
         if (!starParticleData[i]) continue;
         if (coreSet && coreSet.has(i)) continue;
-        evolve_star_mass_and_type(starParticleData[i], scaledDt);
+
+        const shouldExplode = evolve_star_mass_and_type(starParticleData[i], scaledDt);
+        if (shouldExplode) supernovaCandidates.push(i);
     }
+
+    return supernovaCandidates;
+}
+
+function apply_supernova_outcome_to_star(starData) {
+    if (!starData || starData.hasSupernovaTriggered) {
+        return { returnedGasMass: 0.0, remnantMass: 0.0, createsWhiteDwarf: false };
+    }
+
+    const explodingMass = starData.currentMass;
+    const returnedGasMass = explodingMass * STAR_SUPERNOVA_GAS_RETURN_FRACTION;
+    const remnantMass = explodingMass * STAR_SUPERNOVA_REMNANT_FRACTION;
+    const createsWhiteDwarf = remnantMass >= STAR_WHITE_DWARF_MIN_REMNANT_MASS;
+
+    starData.hasSupernovaTriggered = true;
+    starData.canExplodeLater = false;
+    starData.stageAge = 0.0;
+
+    if (createsWhiteDwarf) {
+        starData.starType = STAR_TYPE_WHITE_DWARF;
+        starData.currentMass = remnantMass;
+        starData.isRemnant = true;
+        starData.isActive = true;
+    } else {
+        starData.isActive = false;
+        starData.isRemnant = false;
+        starData.currentMass = remnantMass;
+    }
+
+    return { returnedGasMass, remnantMass, createsWhiteDwarf };
 }
 
 function get_star_visual_profile(starData) {
@@ -163,7 +220,7 @@ function get_star_visual_profile(starData) {
         massRadiusFactor: 0.18
     };
 
-    if (!starData) return fallback;
+    if (!starData || !starData.isActive) return fallback;
 
     switch (starData.starType) {
         case STAR_TYPE_BROWN_DWARF:
@@ -208,13 +265,20 @@ function get_star_visual_profile(starData) {
                 baseRadius: STAR_BASE_RADIUS_RED_SUPERGIANT,
                 massRadiusFactor: STAR_MASS_RADIUS_FACTOR_RED_SUPERGIANT
             };
+        case STAR_TYPE_WHITE_DWARF:
+            return {
+                color: STAR_COLOR_WHITE_DWARF.slice(),
+                glowAlpha: STAR_GLOW_ALPHA_WHITE_DWARF,
+                baseRadius: STAR_BASE_RADIUS_WHITE_DWARF,
+                massRadiusFactor: STAR_MASS_RADIUS_FACTOR_WHITE_DWARF
+            };
         default:
             return fallback;
     }
 }
 
 function compute_star_screen_radius(starData) {
-    if (!starData) return PARTICLE_SIZE;
+    if (!starData || !starData.isActive) return 0.0;
 
     const visual = get_star_visual_profile(starData);
     const massForRadius = starData.currentMass ?? starData.birthMass ?? 1.0;
@@ -277,17 +341,14 @@ function build_multi_galaxy(core_pos_init, core_vel_init, core_particle_counts) 
         core_indices[c] = positions.length;
         block_sizes[c] = pos.length;
 
-        // Offset disk + core
         pos.forEach(p => {
             p[0] += core_pos_init[c][0];
             p[1] += core_pos_init[c][1];
             p[2] += core_pos_init[c][2];
         });
 
-        // Override exact core position
         pos[0] = core_pos_init[c].slice();
 
-        // Add bulk velocity
         vel.forEach(v => {
             v[0] += core_vel_init[c][0];
             v[1] += core_vel_init[c][1];

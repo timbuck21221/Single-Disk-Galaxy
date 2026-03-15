@@ -17,6 +17,8 @@ let STAR_PARTICLE_DATA = [];
 let GAS_PARTICLES = [];
 let gasParticleAcc = [];
 let STAR_BIRTH_FLASHES = [];
+let SUPERNOVA_EVENTS = [];
+let NEXT_GAS_SOURCE_ID = 100000;
 
 let M_bulge, A_bulge, M_disk, A_disk, B_disk, V_halo, R_core;
 
@@ -257,13 +259,91 @@ function buildStarBirthFlashRenderData(flashes, canvas, camera) {
     return renderData;
 }
 
+function addSupernovaEvent(position) {
+    SUPERNOVA_EVENTS.push({
+        position: position.slice(),
+        age: 0,
+        lifetime: SUPERNOVA_EVENT_LIFETIME,
+        maxWorldRadius: SUPERNOVA_EVENT_MAX_WORLD_RADIUS,
+        color: SUPERNOVA_EVENT_COLOR.slice()
+    });
+}
+
+function updateSupernovaEvents(dtStep) {
+    if (SUPERNOVA_EVENTS.length === 0) return;
+
+    for (let i = SUPERNOVA_EVENTS.length - 1; i >= 0; i--) {
+        SUPERNOVA_EVENTS[i].age += dtStep;
+        if (SUPERNOVA_EVENTS[i].age >= SUPERNOVA_EVENTS[i].lifetime) {
+            SUPERNOVA_EVENTS.splice(i, 1);
+        }
+    }
+}
+
+function buildSupernovaRenderData(events, canvas, camera) {
+    if (!events || events.length === 0) return [];
+
+    const positions = events.map(e => e.position);
+    const { projected, mask } = project(positions, canvas, camera);
+    const basis = getCameraBasis(camera);
+
+    const renderData = [];
+
+    for (let i = 0; i < events.length; i++) {
+        if (!mask[i]) continue;
+
+        const event = events[i];
+        const rel = [
+            event.position[0] - basis.position[0],
+            event.position[1] - basis.position[1],
+            event.position[2] - basis.position[2]
+        ];
+
+        const zCam = vecDot(rel, basis.forward);
+        if (zCam <= camera.nearPlane) continue;
+
+        const progress = Math.max(0, Math.min(1, event.age / event.lifetime));
+        const screenMaxRadius = camera.focalLength * event.maxWorldRadius / (zCam + 1e-6);
+
+        renderData.push({
+            screenX: projected[i][0],
+            screenY: projected[i][1],
+            progress,
+            screenMaxRadius,
+            color: event.color
+        });
+    }
+
+    return renderData;
+}
+
+function triggerSupernovaAtIndex(starIndex) {
+    const starData = STAR_PARTICLE_DATA[starIndex];
+    if (!starData || !starData.isActive || starData.hasSupernovaTriggered) return;
+
+    const explosionPosition = positions[starIndex].slice();
+    const explosionVelocity = velocities[starIndex].slice();
+
+    const outcome = apply_supernova_outcome_to_star(starData);
+    if (outcome.returnedGasMass > 0) {
+        const ejecta = spawn_supernova_gas_particles(
+            explosionPosition,
+            explosionVelocity,
+            outcome.returnedGasMass,
+            NEXT_GAS_SOURCE_ID++
+        );
+        GAS_PARTICLES.push(...ejecta);
+    }
+
+    addSupernovaEvent(explosionPosition);
+}
+
 // Initialize simulation
 function init() {
     syncLegacyCoreGlobals();
 
     log_max_radius = Math.log(disk_radius + 1e-6);
 
-    // Two-core orbital initialization
     const dvec = [
         CORE_POS_INIT[1][0] - CORE_POS_INIT[0][0],
         CORE_POS_INIT[1][1] - CORE_POS_INIT[0][1],
@@ -305,7 +385,6 @@ function init() {
     V_halo = params.v_halo;
     R_core = params.r_core;
 
-    // Reset gas particles and flashes on restart
     GAS_PARTICLES = spawn_initial_gas_particles(CORE_POS_INIT, CORE_VEL_INIT);
     gasParticleAcc = compute_gas_particle_accelerations(
         GAS_PARTICLES,
@@ -314,7 +393,10 @@ function init() {
         M_disk, A_disk, B_disk,
         V_halo, R_core
     );
+
     STAR_BIRTH_FLASHES = [];
+    SUPERNOVA_EVENTS = [];
+    NEXT_GAS_SOURCE_ID = 100000;
 
     forces = compute_forces_multi(
         positions, CORES,
@@ -345,19 +427,17 @@ function update() {
             forces.push([0, 0, 0]);
         }
 
-        // Stellar particles remain collisionless tracers
         positions.forEach((p, i) => {
             p[0] += velocities[i][0] * scaledDt + 0.5 * forces[i][0] * scaledDt**2;
             p[1] += velocities[i][1] * scaledDt + 0.5 * forces[i][1] * scaledDt**2;
             p[2] += velocities[i][2] * scaledDt + 0.5 * forces[i][2] * scaledDt**2;
         });
 
-        // Gas particles
         step_gas_particles(GAS_PARTICLES, gasParticleAcc, scaledDt);
+        update_supernova_ejecta_heat(GAS_PARTICLES, scaledDt);
 
         CORES = core_indices.map(i => positions[i].slice());
 
-        // Recompute stellar forces from galaxy potential only
         let new_forces = compute_forces_multi(
             positions, CORES,
             M_bulge, A_bulge,
@@ -371,7 +451,6 @@ function update() {
 
         add_core_core_forces(new_forces, CORES, CORE_MASSES, core_indices);
 
-        // Recompute gas particle accelerations
         let newGasParticleAcc = compute_gas_particle_accelerations(
             GAS_PARTICLES,
             CORES,
@@ -380,17 +459,14 @@ function update() {
             V_halo, R_core
         );
 
-        // Velocity update for stars
         velocities.forEach((v, j) => {
             v[0] += 0.5 * (forces[j][0] + new_forces[j][0]) * scaledDt;
             v[1] += 0.5 * (forces[j][1] + new_forces[j][1]) * scaledDt;
             v[2] += 0.5 * (forces[j][2] + new_forces[j][2]) * scaledDt;
         });
 
-        // Velocity update for gas
         finish_gas_particle_velocity_update(GAS_PARTICLES, gasParticleAcc, newGasParticleAcc, scaledDt);
 
-        // Star formation
         const formationResult = form_stars_from_gas(
             GAS_PARTICLES,
             positions,
@@ -402,11 +478,15 @@ function update() {
         GAS_PARTICLES = formationResult.gasParticles;
         addStarBirthFlashes(formationResult.formedStars);
 
+        const supernovaCandidates = update_all_star_lifecycles(STAR_PARTICLE_DATA, core_set);
+        for (let i = 0; i < supernovaCandidates.length; i++) {
+            triggerSupernovaAtIndex(supernovaCandidates[i]);
+        }
+
         while (new_forces.length < positions.length) {
             new_forces.push([0, 0, 0]);
         }
 
-        // Refresh gas accelerations if gas count changed
         newGasParticleAcc = compute_gas_particle_accelerations(
             GAS_PARTICLES,
             CORES,
@@ -415,8 +495,8 @@ function update() {
             V_halo, R_core
         );
 
-        update_all_star_lifecycles(STAR_PARTICLE_DATA, core_set);
         updateStarBirthFlashes(scaledDt);
+        updateSupernovaEvents(scaledDt);
 
         forces = new_forces;
         gasParticleAcc = newGasParticleAcc;
@@ -490,6 +570,7 @@ function loop() {
     const nearest_r = computeNearestRadii(positions, CORES, C);
     const gasParticleRenderData = buildGasParticleRenderData(GAS_PARTICLES, canvas, camera);
     const starBirthFlashRenderData = buildStarBirthFlashRenderData(STAR_BIRTH_FLASHES, canvas, camera);
+    const supernovaRenderData = buildSupernovaRenderData(SUPERNOVA_EVENTS, canvas, camera);
 
     render(
         canvas,
@@ -504,7 +585,8 @@ function loop() {
         STAR_PARTICLE_DATA,
         star_render_mode,
         gasParticleRenderData,
-        starBirthFlashRenderData
+        starBirthFlashRenderData,
+        supernovaRenderData
     );
 
     requestAnimationFrame(loop);
