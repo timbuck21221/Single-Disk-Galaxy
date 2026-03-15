@@ -7,7 +7,6 @@ function clamp01(x) {
 }
 
 function quantizeRadius(radius) {
-    // Limits cache growth while preserving visual smoothness
     return Math.max(0.75, Math.round(radius * 2) / 2);
 }
 
@@ -26,8 +25,6 @@ function getStarSpriteKey(color, radius, glowAlpha, renderMode) {
 
 function createStarSprite(color, radius, glowAlpha, renderMode) {
     const r = Math.max(0.75, radius);
-
-    // Glow radius chosen to visually match your old layered look
     const glowRadius = (renderMode === STAR_RENDER_MODE_STAR_TYPE) ? r * 2.35 : r * 1.25;
 
     const padding = Math.ceil(glowRadius + 3);
@@ -41,7 +38,6 @@ function createStarSprite(color, radius, glowAlpha, renderMode) {
     const cx = size / 2;
     const cy = size / 2;
 
-    // Outer glow
     if (renderMode === STAR_RENDER_MODE_STAR_TYPE && glowAlpha > 0.001) {
         const grad = c.createRadialGradient(cx, cy, 0, cx, cy, glowRadius);
         grad.addColorStop(0.0, colorToRgba(color, glowAlpha));
@@ -55,13 +51,11 @@ function createStarSprite(color, radius, glowAlpha, renderMode) {
         c.fill();
     }
 
-    // Main stellar disc
     c.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
     c.beginPath();
     c.arc(cx, cy, r, 0, 2 * Math.PI);
     c.fill();
 
-    // Highlight
     if (renderMode === STAR_RENDER_MODE_STAR_TYPE) {
         const innerR = Math.max(0.65, r * 0.42);
         c.fillStyle = 'rgba(255,255,255,0.34)';
@@ -118,7 +112,6 @@ function render(
     gasParticleRenderData = [],
     starBirthFlashRenderData = []
 ) {
-    // Background
     if (enable_trails) {
         ctx.fillStyle = `rgba(0,0,0,${trail_fade})`;
     } else {
@@ -126,10 +119,8 @@ function render(
     }
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Gas particles first
     renderGasParticles(ctx, gasParticleRenderData);
 
-    // Stellar particles
     for (let i = 0; i < positions.length; i++) {
         if (!mask[i] || core_set.has(i)) continue;
 
@@ -137,8 +128,7 @@ function render(
         const starData = starParticleData[i];
         const radius = compute_star_screen_radius(starData);
 
-        // Simple screen cull before any sprite work
-        const approxCullR = radius * 2.6;
+        const approxCullR = radius * 2.8;
         if (
             px < -approxCullR || px > canvas.width + approxCullR ||
             py < -approxCullR || py > canvas.height + approxCullR
@@ -150,12 +140,10 @@ function render(
         const profile = get_star_visual_profile(starData);
         const glowAlpha = profile.glowAlpha;
 
-        // Best payoff: cached sprites for star-type mode
         if (starRenderMode === STAR_RENDER_MODE_STAR_TYPE) {
             const sprite = getStarSprite(color, radius, glowAlpha, starRenderMode);
             ctx.drawImage(sprite.canvas, px - sprite.halfW, py - sprite.halfH);
         } else {
-            // Keep core-distance mode simpler for now since color varies continuously
             ctx.beginPath();
             ctx.arc(px, py, radius, 0, 2 * Math.PI);
             ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
@@ -163,7 +151,6 @@ function render(
         }
     }
 
-    // Galactic cores
     core_indices.forEach(ci => {
         if (!mask[ci]) return;
 
@@ -178,7 +165,6 @@ function render(
         ctx.fill();
     });
 
-    // Star birth flashes on top
     renderStarBirthFlashes(ctx, starBirthFlashRenderData);
 }
 
@@ -191,7 +177,6 @@ function renderGasParticles(ctx, gasParticleRenderData) {
 
         const densityFactor = Math.max(0, Math.min(1, gp.density / Math.max(GAS_FORMATION_THRESHOLD, 1)));
 
-        // Keep these here for now unless you want them moved into constants.js
         const baseMainAlpha = 0.11;
         const baseHazeAlpha = 0.035;
         const baseOuterAlpha = 0.012;

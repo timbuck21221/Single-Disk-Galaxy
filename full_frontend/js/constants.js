@@ -15,9 +15,9 @@ const CENTRAL_MASS = 1500.0;
 const CORE_POS_INIT = [[0.0, 0.0, 0.0], [18.0, 0.0, 0.0]];
 
 // Default simulation parameters
-let dt = 0.02;
-let physics_steps_per_frame = 2;
-let time_scale = 1.0;
+let dt = 0.005;
+let physics_steps_per_frame = 1;
+let time_scale = 0.11;
 
 let disk_radius = 8.0;
 let velocity_noise = 0.01;
@@ -47,8 +47,10 @@ const STAR_TYPE_BROWN_DWARF = 'brown_dwarf';
 const STAR_TYPE_LOW_MASS = 'low_mass_star';
 const STAR_TYPE_MAIN_SEQUENCE = 'main_sequence_star';
 const STAR_TYPE_MASSIVE = 'massive_star';
+const STAR_TYPE_RED_GIANT = 'red_giant';
+const STAR_TYPE_RED_SUPERGIANT = 'red_supergiant';
 
-// Simulation-unit mass thresholds used for classification
+// Simulation-unit mass thresholds used for birth classification
 const STAR_MASS_BROWN_DWARF_MAX = 20.0;
 const STAR_MASS_LOW_MASS_MAX = 80.0;
 const STAR_MASS_MAIN_SEQUENCE_MAX = 180.0;
@@ -76,29 +78,59 @@ const STAR_INIT_WEIGHT_MASSIVE = 0.06;
 const STAR_METALLICITY_MIN = 0.008;
 const STAR_METALLICITY_MAX = 0.030;
 
+// Lifecycle
+const STAR_AGE_RATE = 2.5;
+
+// Minimum age before a branch is eligible to evolve
+const STAR_EVOLVE_AGE_LOW_MASS = 20.0;
+const STAR_EVOLVE_AGE_MAIN_SEQUENCE = 15.0;
+const STAR_EVOLVE_AGE_MASSIVE = 7.0;
+
+// Per-step evolution probability scale after age threshold is reached
+const STAR_EVOLVE_CHANCE_RATE_LOW_MASS = 0.0050;
+const STAR_EVOLVE_CHANCE_RATE_MAIN_SEQUENCE = 0.003;
+const STAR_EVOLVE_CHANCE_RATE_MASSIVE = 0.004;
+
+// Mass evolution during giant phases
+const STAR_GIANT_MASS_GROWTH_RATE = 0.020;
+const STAR_SUPERGIANT_MASS_GROWTH_RATE = 0.045;
+
+// Evolutionary mass multipliers relative to birth mass
+const STAR_RED_GIANT_TARGET_MASS_FACTOR_LOW = 1.45;
+const STAR_RED_GIANT_TARGET_MASS_FACTOR_MAIN = 1.75;
+const STAR_RED_SUPERGIANT_TARGET_MASS_FACTOR = 2.35;
+
 // Visual tuning
 const STAR_SIZE_MIN = 1.0;
-const STAR_SIZE_MAX = 4.4;
+const STAR_SIZE_MAX = 6.8;
 
 const STAR_BASE_RADIUS_BROWN_DWARF = 1.00;
 const STAR_BASE_RADIUS_LOW_MASS = 1.20;
 const STAR_BASE_RADIUS_MAIN_SEQUENCE = 1.50;
 const STAR_BASE_RADIUS_MASSIVE = 1.95;
+const STAR_BASE_RADIUS_RED_GIANT = 2.70;
+const STAR_BASE_RADIUS_RED_SUPERGIANT = 3.55;
 
 const STAR_MASS_RADIUS_FACTOR_BROWN_DWARF = 0.16;
 const STAR_MASS_RADIUS_FACTOR_LOW_MASS = 0.19;
 const STAR_MASS_RADIUS_FACTOR_MAIN_SEQUENCE = 0.22;
 const STAR_MASS_RADIUS_FACTOR_MASSIVE = 0.27;
+const STAR_MASS_RADIUS_FACTOR_RED_GIANT = 0.36;
+const STAR_MASS_RADIUS_FACTOR_RED_SUPERGIANT = 0.46;
 
 const STAR_COLOR_BROWN_DWARF = [175, 95, 95];
 const STAR_COLOR_LOW_MASS = [255, 195, 120];
 const STAR_COLOR_MAIN_SEQUENCE = [255, 245, 210];
 const STAR_COLOR_MASSIVE = [170, 215, 255];
+const STAR_COLOR_RED_GIANT = [255, 135, 90];
+const STAR_COLOR_RED_SUPERGIANT = [255, 82, 70];
 
 const STAR_GLOW_ALPHA_BROWN_DWARF = 0.07;
 const STAR_GLOW_ALPHA_LOW_MASS = 0.10;
 const STAR_GLOW_ALPHA_MAIN_SEQUENCE = 0.13;
 const STAR_GLOW_ALPHA_MASSIVE = 0.18;
+const STAR_GLOW_ALPHA_RED_GIANT = 0.22;
+const STAR_GLOW_ALPHA_RED_SUPERGIANT = 0.30;
 
 // ------------------------------
 // Gas particle system settings

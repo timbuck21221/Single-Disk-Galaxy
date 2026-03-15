@@ -415,6 +415,7 @@ function update() {
             V_halo, R_core
         );
 
+        update_all_star_lifecycles(STAR_PARTICLE_DATA, core_set);
         updateStarBirthFlashes(scaledDt);
 
         forces = new_forces;

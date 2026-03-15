@@ -15,16 +15,69 @@ function sample_star_metallicity() {
     return randRange(STAR_METALLICITY_MIN, STAR_METALLICITY_MAX);
 }
 
+function get_star_branch_target_type(birthClass) {
+    if (birthClass === STAR_TYPE_MASSIVE) return STAR_TYPE_RED_SUPERGIANT;
+    if (birthClass === STAR_TYPE_MAIN_SEQUENCE) return STAR_TYPE_RED_GIANT;
+    if (birthClass === STAR_TYPE_LOW_MASS) return STAR_TYPE_RED_GIANT;
+    return birthClass;
+}
+
+function get_star_evolution_age_threshold(birthClass) {
+    switch (birthClass) {
+        case STAR_TYPE_LOW_MASS:
+            return STAR_EVOLVE_AGE_LOW_MASS;
+        case STAR_TYPE_MAIN_SEQUENCE:
+            return STAR_EVOLVE_AGE_MAIN_SEQUENCE;
+        case STAR_TYPE_MASSIVE:
+            return STAR_EVOLVE_AGE_MASSIVE;
+        default:
+            return Infinity;
+    }
+}
+
+function get_star_evolution_chance_rate(birthClass) {
+    switch (birthClass) {
+        case STAR_TYPE_LOW_MASS:
+            return STAR_EVOLVE_CHANCE_RATE_LOW_MASS;
+        case STAR_TYPE_MAIN_SEQUENCE:
+            return STAR_EVOLVE_CHANCE_RATE_MAIN_SEQUENCE;
+        case STAR_TYPE_MASSIVE:
+            return STAR_EVOLVE_CHANCE_RATE_MASSIVE;
+        default:
+            return 0.0;
+    }
+}
+
+function get_star_target_mass(birthClass, birthMass) {
+    switch (birthClass) {
+        case STAR_TYPE_LOW_MASS:
+            return birthMass * STAR_RED_GIANT_TARGET_MASS_FACTOR_LOW;
+        case STAR_TYPE_MAIN_SEQUENCE:
+            return birthMass * STAR_RED_GIANT_TARGET_MASS_FACTOR_MAIN;
+        case STAR_TYPE_MASSIVE:
+            return birthMass * STAR_RED_SUPERGIANT_TARGET_MASS_FACTOR;
+        default:
+            return birthMass;
+    }
+}
+
 function create_star_particle_data(mass, origin = 'initial', metallicity = null, sourceCoreIndex = -1) {
     const resolvedMetallicity = metallicity !== null ? metallicity : sample_star_metallicity();
+    const birthClass = classify_star_type_from_mass(mass);
 
     return {
-        mass,
+        birthMass: mass,
+        currentMass: mass,
         metallicity: resolvedMetallicity,
         age: 0.0,
         origin,
         sourceCoreIndex,
-        starType: classify_star_type_from_mass(mass)
+        birthClass,
+        starType: birthClass,
+        evolutionTriggered: false,
+        evolutionTargetType: get_star_branch_target_type(birthClass),
+        evolutionTargetMass: get_star_target_mass(birthClass, mass),
+        canExplodeLater: birthClass === STAR_TYPE_MASSIVE
     };
 }
 
@@ -48,6 +101,58 @@ function sample_initial_star_mass() {
     }
 
     return randRange(STAR_INIT_MASS_MASSIVE_MIN, STAR_INIT_MASS_MASSIVE_MAX);
+}
+
+function evolve_star_mass_and_type(starData, dtStep) {
+    if (!starData) return;
+    if (starData.birthClass === STAR_TYPE_BROWN_DWARF) return;
+
+    starData.age += dtStep * STAR_AGE_RATE;
+
+    if (!starData.evolutionTriggered) {
+        const ageThreshold = get_star_evolution_age_threshold(starData.birthClass);
+        if (starData.age >= ageThreshold) {
+            const chanceRate = get_star_evolution_chance_rate(starData.birthClass);
+            const perStepChance = 1.0 - Math.exp(-chanceRate * dtStep * STAR_AGE_RATE);
+            if (Math.random() < perStepChance) {
+                starData.evolutionTriggered = true;
+                starData.starType = starData.evolutionTargetType;
+            }
+        }
+    }
+
+    if (!starData.evolutionTriggered) return;
+
+    let growthRate = 0.0;
+    if (starData.starType === STAR_TYPE_RED_GIANT) {
+        growthRate = STAR_GIANT_MASS_GROWTH_RATE;
+    } else if (starData.starType === STAR_TYPE_RED_SUPERGIANT) {
+        growthRate = STAR_SUPERGIANT_MASS_GROWTH_RATE;
+    }
+
+    if (growthRate <= 0.0) return;
+
+    const targetMass = starData.evolutionTargetMass;
+    if (starData.currentMass >= targetMass) {
+        starData.currentMass = targetMass;
+        return;
+    }
+
+    const delta = growthRate * starData.birthMass * dtStep * STAR_AGE_RATE;
+    starData.currentMass = Math.min(targetMass, starData.currentMass + delta);
+}
+
+function update_all_star_lifecycles(starParticleData, coreSet) {
+    if (!starParticleData || starParticleData.length === 0) return;
+
+    const scaledDt = dt * time_scale;
+    if (scaledDt <= 0) return;
+
+    for (let i = 0; i < starParticleData.length; i++) {
+        if (!starParticleData[i]) continue;
+        if (coreSet && coreSet.has(i)) continue;
+        evolve_star_mass_and_type(starParticleData[i], scaledDt);
+    }
 }
 
 function get_star_visual_profile(starData) {
@@ -89,6 +194,20 @@ function get_star_visual_profile(starData) {
                 baseRadius: STAR_BASE_RADIUS_MASSIVE,
                 massRadiusFactor: STAR_MASS_RADIUS_FACTOR_MASSIVE
             };
+        case STAR_TYPE_RED_GIANT:
+            return {
+                color: STAR_COLOR_RED_GIANT.slice(),
+                glowAlpha: STAR_GLOW_ALPHA_RED_GIANT,
+                baseRadius: STAR_BASE_RADIUS_RED_GIANT,
+                massRadiusFactor: STAR_MASS_RADIUS_FACTOR_RED_GIANT
+            };
+        case STAR_TYPE_RED_SUPERGIANT:
+            return {
+                color: STAR_COLOR_RED_SUPERGIANT.slice(),
+                glowAlpha: STAR_GLOW_ALPHA_RED_SUPERGIANT,
+                baseRadius: STAR_BASE_RADIUS_RED_SUPERGIANT,
+                massRadiusFactor: STAR_MASS_RADIUS_FACTOR_RED_SUPERGIANT
+            };
         default:
             return fallback;
     }
@@ -98,9 +217,10 @@ function compute_star_screen_radius(starData) {
     if (!starData) return PARTICLE_SIZE;
 
     const visual = get_star_visual_profile(starData);
+    const massForRadius = starData.currentMass ?? starData.birthMass ?? 1.0;
     const radius =
         visual.baseRadius +
-        visual.massRadiusFactor * Math.log10(Math.max(1.0, starData.mass));
+        visual.massRadiusFactor * Math.log10(Math.max(1.0, massForRadius));
 
     return Math.max(STAR_SIZE_MIN, Math.min(STAR_SIZE_MAX, radius));
 }
