@@ -242,7 +242,18 @@ function spawn_supernova_gas_particles(position, velocity, totalGasMass, sourceI
     return ejecta;
 }
 
-function compute_gas_particle_accelerations(gasParticles, core_pos, m_bulge, a_bulge, m_disk, a_disk, b_disk, v_halo, r_core) {
+function compute_gas_particle_accelerations(
+    gasParticles,
+    core_pos,
+    m_bulge,
+    a_bulge,
+    m_disk,
+    a_disk,
+    b_disk,
+    v_halo,
+    r_core,
+    blackHoleSources = []
+) {
     const acc = new Array(gasParticles.length).fill(0).map(() => [0, 0, 0]);
 
     for (let i = 0; i < gasParticles.length; i++) {
@@ -263,6 +274,25 @@ function compute_gas_particle_accelerations(gasParticles, core_pos, m_bulge, a_b
             ax += axt;
             ay += ayt;
             az += azt;
+        }
+
+        for (let b = 0; b < blackHoleSources.length; b++) {
+            const bh = blackHoleSources[b];
+            const dx = gp.position[0] - bh.position[0];
+            const dy = gp.position[1] - bh.position[1];
+            const dz = gp.position[2] - bh.position[2];
+            const d2 = dx * dx + dy * dy + dz * dz;
+            const dist = Math.sqrt(d2) + 1e-12;
+
+            if (dist > bh.influenceRadius) continue;
+
+            const softened = d2 + BLACK_HOLE_SOFTENING * BLACK_HOLE_SOFTENING;
+            const invR3 = 1.0 / (softened * Math.sqrt(softened) + 1e-12);
+            const strength = G * bh.mass * BLACK_HOLE_LOCAL_GRAVITY_STRENGTH;
+
+            ax -= strength * dx * invR3;
+            ay -= strength * dy * invR3;
+            az -= strength * dz * invR3;
         }
 
         ax += -GAS_GLOBAL_DAMPING * gp.velocity[0];

@@ -6,6 +6,10 @@ function clamp01(x) {
     return Math.max(0, Math.min(1, x));
 }
 
+function lerp(a, b, t) {
+    return a + (b - a) * t;
+}
+
 function quantizeRadius(radius) {
     return Math.max(0.75, Math.round(radius * 2) / 2);
 }
@@ -106,11 +110,61 @@ function isSupernovaRemnantStar(starData) {
     return !!(starData && starData.isActive && starData.hasSupernovaTriggered);
 }
 
-function get_star_render_color(starData, nearestRadius, renderMode) {
-    if (isSupernovaRemnantStar(starData)) {
-        return SUPERNOVA_REMNANT_WHITE_COLOR.slice();
+function isPulsarStar(starData) {
+    return !!(starData && starData.isActive && starData.starType === STAR_TYPE_PULSAR && starData.isPulsar);
+}
+
+function isCompactRemnantStar(starData) {
+    if (!starData || !starData.isActive) return false;
+    return starData.starType === STAR_TYPE_NEUTRON_STAR || starData.starType === STAR_TYPE_PULSAR;
+}
+
+function isNeutronStar(starData) {
+    return !!(starData && starData.isActive && starData.starType === STAR_TYPE_NEUTRON_STAR);
+}
+
+function isBlackHoleStarForRender(starData) {
+    return !!(starData && starData.isActive && starData.starType === STAR_TYPE_BLACK_HOLE && starData.isBlackHole);
+}
+
+function shouldDisplayStarForFilter(starData, filterValue) {
+    if (!starData || !starData.isActive) return false;
+
+    if (!filterValue || filterValue === STAR_DISPLAY_FILTER_ALL) return true;
+
+    if (filterValue === STAR_DISPLAY_FILTER_COMPACT_REMNANT) {
+        return isCompactRemnantStar(starData);
     }
 
+    if (filterValue === STAR_DISPLAY_FILTER_SUPERNOVA_REMNANT) {
+        return !!starData.hasSupernovaTriggered;
+    }
+
+    return starData.starType === filterValue;
+}
+
+function getPulsarRenderState(starData) {
+    if (!isPulsarStar(starData)) {
+        return {
+            beamAngle: 0.0,
+            pulse: 0.0,
+            beamAlphaScale: 0.0
+        };
+    }
+
+    const age = starData.age || 0.0;
+    const beamAngle = (starData.pulsarBeamAngle || 0.0) + age * (starData.pulsarSpinRate || 0.0);
+    const pulseRate = starData.pulsarPulseRate || 0.0;
+    const pulseStrength = starData.pulsarPulseStrength || 0.0;
+
+    const rawPulse = 0.5 + 0.5 * Math.sin((starData.pulsarSpinPhase || 0.0) + age * pulseRate);
+    const pulse = Math.pow(rawPulse, 1.25);
+    const beamAlphaScale = 0.62 + pulse * (0.24 + 0.18 * pulseStrength);
+
+    return { beamAngle, pulse, beamAlphaScale };
+}
+
+function get_star_render_color(starData, nearestRadius, renderMode) {
     if (renderMode === STAR_RENDER_MODE_CORE_DISTANCE) {
         const t = Math.log(nearestRadius) / log_max_radius;
         const tt = Math.max(0, Math.min(1, t));
@@ -132,6 +186,153 @@ function renderStarParticle(ctx, px, py, radius, color, glowAlpha, starRenderMod
     }
 }
 
+function computeBlackHoleMassProgress(starData) {
+    const mass = Math.max(1.0, starData?.currentMass ?? 1.0);
+    const minMass = Math.max(1.0, BLACK_HOLE_RENDER_MASS_MIN);
+    const maxMass = Math.max(minMass + 1e-6, BLACK_HOLE_RENDER_MASS_MAX);
+
+    const minLog = Math.log10(minMass);
+    const maxLog = Math.log10(maxMass);
+    const massLog = Math.log10(mass);
+
+    if (maxLog <= minLog + 1e-9) return 1.0;
+    return clamp01((massLog - minLog) / (maxLog - minLog));
+}
+
+function computeBlackHoleRenderRadius(starData) {
+    const t = computeBlackHoleMassProgress(starData);
+    return lerp(BLACK_HOLE_RENDER_RADIUS_MIN, BLACK_HOLE_RENDER_RADIUS_MAX, t);
+}
+
+function computeBlackHoleRenderMetrics(starData, isPromotedCore = false) {
+    const bodyRadius = computeBlackHoleRenderRadius(starData);
+
+    const unclampedLensing = bodyRadius * BLACK_HOLE_LENSING_RADIUS_FACTOR;
+    const lensingRadius = Math.min(BLACK_HOLE_MAX_VISUAL_RADIUS, unclampedLensing);
+
+    const rimWidth = Math.max(1.0, bodyRadius * BLACK_HOLE_RIM_WIDTH_FACTOR);
+    const lensingAlpha = BLACK_HOLE_LENSING_ALPHA * (isPromotedCore ? BLACK_HOLE_PROMOTED_LENSING_ALPHA_SCALE : 1.0);
+
+    const approxCullR = lensingRadius + rimWidth + 6.0;
+
+    return {
+        bodyRadius,
+        lensingRadius,
+        rimWidth,
+        lensingAlpha,
+        approxCullR
+    };
+}
+
+function computePrimordialCoreBlackHoleRenderMetrics() {
+    const bodyRadius = BLACK_HOLE_RENDER_RADIUS_MAX;
+    const unclampedLensing = bodyRadius * BLACK_HOLE_LENSING_RADIUS_FACTOR;
+    const lensingRadius = Math.min(BLACK_HOLE_MAX_VISUAL_RADIUS, unclampedLensing);
+    const rimWidth = Math.max(1.0, bodyRadius * BLACK_HOLE_RIM_WIDTH_FACTOR);
+    const lensingAlpha = BLACK_HOLE_LENSING_ALPHA * BLACK_HOLE_PROMOTED_LENSING_ALPHA_SCALE;
+    const approxCullR = lensingRadius + rimWidth + 6.0;
+
+    return {
+        bodyRadius,
+        lensingRadius,
+        rimWidth,
+        lensingAlpha,
+        approxCullR
+    };
+}
+
+function renderBlackHoleParticle(ctx, px, py, metrics, isPromotedCore = false) {
+    const radius = metrics.bodyRadius;
+    const lensRadius = metrics.lensingRadius;
+    const rimWidth = metrics.rimWidth;
+    const [rr, rg, rb] = BLACK_HOLE_RIM_COLOR;
+
+    const lensGrad = ctx.createRadialGradient(px, py, radius * 0.55, px, py, lensRadius);
+    lensGrad.addColorStop(0.0, `rgba(${rr},${rg},${rb},0)`);
+    lensGrad.addColorStop(0.52, `rgba(${rr},${rg},${rb},${metrics.lensingAlpha * 0.28})`);
+    lensGrad.addColorStop(0.78, `rgba(${rr},${rg},${rb},${metrics.lensingAlpha})`);
+    lensGrad.addColorStop(1.0, `rgba(${rr},${rg},${rb},0)`);
+
+    ctx.beginPath();
+    ctx.arc(px, py, lensRadius, 0, 2 * Math.PI);
+    ctx.fillStyle = lensGrad;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(px, py, radius * BLACK_HOLE_CORE_DARK_SCALE, 0, 2 * Math.PI);
+    ctx.fillStyle = `rgb(${STAR_COLOR_BLACK_HOLE[0]},${STAR_COLOR_BLACK_HOLE[1]},${STAR_COLOR_BLACK_HOLE[2]})`;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(px, py, radius, 0, 2 * Math.PI);
+    ctx.strokeStyle = `rgba(${rr},${rg},${rb},${BLACK_HOLE_RIM_ALPHA})`;
+    ctx.lineWidth = rimWidth;
+    ctx.stroke();
+
+    if (isPromotedCore) {
+        const subtleRing = Math.min(
+            BLACK_HOLE_MAX_VISUAL_RADIUS,
+            radius * BLACK_HOLE_PROMOTED_SUBTLE_RING_SCALE
+        );
+
+        ctx.beginPath();
+        ctx.arc(px, py, subtleRing, 0, 2 * Math.PI);
+        ctx.strokeStyle = `rgba(${rr},${rg},${rb},${BLACK_HOLE_PROMOTED_SUBTLE_RING_ALPHA})`;
+        ctx.lineWidth = Math.max(1.0, rimWidth * 0.72);
+        ctx.stroke();
+    }
+}
+
+function renderPulsarBeam(ctx, px, py, beamAngle, beamAlphaScale) {
+    const len = PULSAR_BEAM_LENGTH;
+    const [r, g, b] = PULSAR_BEAM_COLOR;
+
+    const widthNear = Math.max(0.55, len * 0.0065);
+    const widthFar = Math.max(1.25, len * 0.022);
+
+    for (let dir = -1; dir <= 1; dir += 2) {
+        const angle = beamAngle + (dir === 1 ? 0 : Math.PI);
+        const dx = Math.cos(angle);
+        const dy = Math.sin(angle);
+        const pxn = -dy;
+        const pyn = dx;
+
+        const x0 = px;
+        const y0 = py;
+        const x1 = px + dx * len;
+        const y1 = py + dy * len;
+
+        const grad = ctx.createLinearGradient(x0, y0, x1, y1);
+        grad.addColorStop(0.0, `rgba(${r},${g},${b},${PULSAR_BEAM_CORE_ALPHA * beamAlphaScale})`);
+        grad.addColorStop(0.18, `rgba(${r},${g},${b},${PULSAR_BEAM_CORE_ALPHA * 0.82 * beamAlphaScale})`);
+        grad.addColorStop(0.55, `rgba(${r},${g},${b},${PULSAR_BEAM_CORE_ALPHA * 0.32 * beamAlphaScale})`);
+        grad.addColorStop(1.0, `rgba(${r},${g},${b},0)`);
+
+        ctx.beginPath();
+        ctx.moveTo(x0 + pxn * widthNear, y0 + pyn * widthNear);
+        ctx.lineTo(x0 - pxn * widthNear, y0 - pyn * widthNear);
+        ctx.lineTo(x1 - pxn * widthFar, y1 - pyn * widthFar);
+        ctx.lineTo(x1 + pxn * widthFar, y1 + pyn * widthFar);
+        ctx.closePath();
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        const hazeGrad = ctx.createLinearGradient(x0, y0, x1, y1);
+        hazeGrad.addColorStop(0.0, `rgba(${r},${g},${b},${PULSAR_BEAM_HAZE_ALPHA * beamAlphaScale})`);
+        hazeGrad.addColorStop(0.3, `rgba(${r},${g},${b},${PULSAR_BEAM_HAZE_ALPHA * 0.58 * beamAlphaScale})`);
+        hazeGrad.addColorStop(1.0, `rgba(${r},${g},${b},0)`);
+
+        ctx.beginPath();
+        ctx.moveTo(x0 + pxn * widthNear * 1.55, y0 + pyn * widthNear * 1.55);
+        ctx.lineTo(x0 - pxn * widthNear * 1.55, y0 - pyn * widthNear * 1.55);
+        ctx.lineTo(x1 - pxn * widthFar * 1.45, y1 - pyn * widthFar * 1.45);
+        ctx.lineTo(x1 + pxn * widthFar * 1.45, y1 + pyn * widthFar * 1.45);
+        ctx.closePath();
+        ctx.fillStyle = hazeGrad;
+        ctx.fill();
+    }
+}
+
 function render(
     canvas,
     ctx,
@@ -144,6 +345,7 @@ function render(
     nearest_r,
     starParticleData,
     starRenderMode,
+    starDisplayFilter,
     gasParticleRenderData = [],
     starBirthFlashRenderData = [],
     supernovaRenderData = []
@@ -157,18 +359,61 @@ function render(
 
     renderGasParticles(ctx, gasParticleRenderData);
 
-    // Render normal stars first so the scene-dim overlay can suppress them.
+    for (let i = 0; i < positions.length; i++) {
+        if (!mask[i] || core_set.has(i)) continue;
+
+        const starData = starParticleData[i];
+        if (!isPulsarStar(starData)) continue;
+        if (!shouldDisplayStarForFilter(starData, starDisplayFilter)) continue;
+
+        const [px, py] = projected[i];
+        const radius = compute_star_screen_radius(starData);
+        const approxCullR = radius + PULSAR_BEAM_LENGTH + 10;
+
+        if (
+            px < -approxCullR || px > canvas.width + approxCullR ||
+            py < -approxCullR || py > canvas.height + approxCullR
+        ) {
+            continue;
+        }
+
+        const pulsarState = getPulsarRenderState(starData);
+        renderPulsarBeam(ctx, px, py, pulsarState.beamAngle, pulsarState.beamAlphaScale);
+    }
+
     for (let i = 0; i < positions.length; i++) {
         if (!mask[i] || core_set.has(i)) continue;
 
         const starData = starParticleData[i];
         if (!starData || !starData.isActive) continue;
-        if (isSupernovaRemnantStar(starData)) continue;
+        if (!shouldDisplayStarForFilter(starData, starDisplayFilter)) continue;
 
         const [px, py] = projected[i];
-        const radius = compute_star_screen_radius(starData);
+        let radius = compute_star_screen_radius(starData);
 
-        const approxCullR = radius * 2.8;
+        if (isBlackHoleStarForRender(starData)) {
+            const bhMetrics = computeBlackHoleRenderMetrics(starData, false);
+
+            if (
+                px < -bhMetrics.approxCullR || px > canvas.width + bhMetrics.approxCullR ||
+                py < -bhMetrics.approxCullR || py > canvas.height + bhMetrics.approxCullR
+            ) {
+                continue;
+            }
+
+            renderBlackHoleParticle(ctx, px, py, bhMetrics, false);
+            continue;
+        }
+
+        if (isNeutronStar(starData)) {
+            radius += 0.22;
+        }
+
+        if (isSupernovaRemnantStar(starData)) {
+            radius += SUPERNOVA_REMNANT_FLASH_RADIUS_BOOST;
+        }
+
+        const approxCullR = Math.max(radius * 3.1, 6.0);
         if (
             px < -approxCullR || px > canvas.width + approxCullR ||
             py < -approxCullR || py > canvas.height + approxCullR
@@ -178,15 +423,59 @@ function render(
 
         const color = get_star_render_color(starData, nearest_r[i], starRenderMode);
         const profile = get_star_visual_profile(starData);
-        const glowAlpha = profile.glowAlpha;
+        let glowAlpha = profile.glowAlpha;
+
+        if (isPulsarStar(starData)) {
+            const pulsarState = getPulsarRenderState(starData);
+            glowAlpha *= 1.10 + 0.30 * pulsarState.pulse;
+        }
+
+        if (isNeutronStar(starData)) {
+            glowAlpha *= 1.35;
+        }
+
+        if (isSupernovaRemnantStar(starData)) {
+            glowAlpha *= 1.85;
+        }
 
         renderStarParticle(ctx, px, py, radius, color, glowAlpha, starRenderMode);
     }
 
-    core_indices.forEach(ci => {
+    core_indices.forEach((ci, coreSlot) => {
         if (!mask[ci]) return;
 
         const [px, py] = projected[ci];
+        const starData = starParticleData[ci];
+
+        if (isBlackHoleStarForRender(starData)) {
+            const bhMetrics = computeBlackHoleRenderMetrics(starData, true);
+
+            if (
+                px < -bhMetrics.approxCullR || px > canvas.width + bhMetrics.approxCullR ||
+                py < -bhMetrics.approxCullR || py > canvas.height + bhMetrics.approxCullR
+            ) {
+                return;
+            }
+
+            renderBlackHoleParticle(ctx, px, py, bhMetrics, true);
+            return;
+        }
+
+        const isPrimordialCore = coreSlot < CORE_POS_INIT.length;
+        if (isPrimordialCore) {
+            const primordialMetrics = computePrimordialCoreBlackHoleRenderMetrics();
+
+            if (
+                px < -primordialMetrics.approxCullR || px > canvas.width + primordialMetrics.approxCullR ||
+                py < -primordialMetrics.approxCullR || py > canvas.height + primordialMetrics.approxCullR
+            ) {
+                return;
+            }
+
+            renderBlackHoleParticle(ctx, px, py, primordialMetrics, true);
+            return;
+        }
+
         if (px < -CORE_SIZE || px > canvas.width + CORE_SIZE || py < -CORE_SIZE || py > canvas.height + CORE_SIZE) {
             return;
         }
@@ -198,34 +487,7 @@ function render(
     });
 
     renderStarBirthFlashes(ctx, starBirthFlashRenderData);
-
-    // Dim the whole scene to make the supernova white point feel blinding.
     renderSupernovaEvents(ctx, supernovaRenderData, canvas);
-
-    // Render supernova remnants after dimming so they remain the brightest point.
-    for (let i = 0; i < positions.length; i++) {
-        if (!mask[i] || core_set.has(i)) continue;
-
-        const starData = starParticleData[i];
-        if (!isSupernovaRemnantStar(starData)) continue;
-
-        const [px, py] = projected[i];
-        const baseRadius = compute_star_screen_radius(starData);
-        const radius = baseRadius + SUPERNOVA_REMNANT_FLASH_RADIUS_BOOST;
-
-        const approxCullR = radius * 3.2;
-        if (
-            px < -approxCullR || px > canvas.width + approxCullR ||
-            py < -approxCullR || py > canvas.height + approxCullR
-        ) {
-            continue;
-        }
-
-        const color = SUPERNOVA_REMNANT_WHITE_COLOR.slice();
-        const glowAlpha = SUPERNOVA_REMNANT_FLASH_GLOW_ALPHA;
-
-        renderStarParticle(ctx, px, py, radius, color, glowAlpha, STAR_RENDER_MODE_STAR_TYPE);
-    }
 }
 
 function renderGasParticles(ctx, gasParticleRenderData) {
@@ -246,17 +508,15 @@ function renderGasParticles(ctx, gasParticleRenderData) {
         const densityHazeBoost = 0.06 * densityFactor;
         const densityOuterBoost = 0.025 * densityFactor;
 
-        const heatMainBoost = 0.24 * hotness;
-        const heatHazeBoost = 0.18 * hotness;
-        const heatOuterBoost = 0.12 * hotness;
+        const heatMainBoost = 0.10 * hotness;
 
-        const mainAlpha = Math.min(0.90, baseMainAlpha + densityMainBoost + heatMainBoost);
-        const hazeAlpha = Math.min(0.48, baseHazeAlpha + densityHazeBoost + heatHazeBoost);
-        const outerAlpha = Math.min(0.26, baseOuterAlpha + densityOuterBoost + heatOuterBoost);
+        const mainAlpha = Math.min(0.72, baseMainAlpha + densityMainBoost + heatMainBoost);
+        const hazeAlpha = Math.min(0.14, baseHazeAlpha + densityHazeBoost);
+        const outerAlpha = Math.min(0.06, baseOuterAlpha + densityOuterBoost);
 
         const mainSize = gp.size;
-        const hazeSize = gp.size * (2.1 + 0.2 * densityFactor + 0.55 * hotness);
-        const outerSize = gp.size * (3.2 + 0.3 * densityFactor + 1.05 * hotness);
+        const hazeSize = gp.size * (2.1 + 0.2 * densityFactor);
+        const outerSize = gp.size * (3.2 + 0.3 * densityFactor);
 
         ctx.beginPath();
         ctx.arc(gp.screenX, gp.screenY, outerSize, 0, 2 * Math.PI);
@@ -273,13 +533,7 @@ function renderGasParticles(ctx, gasParticleRenderData) {
         ctx.fillStyle = `rgba(${r},${g},${b},${mainAlpha})`;
         ctx.fill();
 
-        if (hotness > 0.08) {
-            const hotCoreAlpha = Math.min(0.85, 0.28 + hotness * 0.55);
-            ctx.beginPath();
-            ctx.arc(gp.screenX, gp.screenY, Math.max(0.95, gp.size * (0.58 + 0.18 * hotness)), 0, 2 * Math.PI);
-            ctx.fillStyle = `rgba(255,245,232,${hotCoreAlpha})`;
-            ctx.fill();
-        } else if (gp.density >= GAS_FORMATION_THRESHOLD - 3) {
+        if (gp.density >= GAS_FORMATION_THRESHOLD - 3 && hotness <= 0.08) {
             const coreAlpha = Math.min(0.22, 0.06 + 0.12 * densityFactor);
 
             ctx.beginPath();

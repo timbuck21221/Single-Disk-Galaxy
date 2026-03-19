@@ -113,3 +113,42 @@ function add_core_core_forces(forces, core_pos, core_masses, core_indices) {
         forces[ia][2] += az;
     }
 }
+
+function add_black_hole_forces(forces, positions, starParticleData, coreSet) {
+    const blackHoles = build_black_hole_sources(positions, starParticleData);
+    if (blackHoles.length === 0) return;
+
+    for (let i = 0; i < positions.length; i++) {
+        if (coreSet && coreSet.has(i)) continue;
+
+        const starData = starParticleData[i];
+        if (!starData || !starData.isActive) continue;
+
+        let ax = 0.0, ay = 0.0, az = 0.0;
+
+        for (let b = 0; b < blackHoles.length; b++) {
+            const bh = blackHoles[b];
+            if (bh.index === i) continue;
+
+            const dx = positions[i][0] - bh.position[0];
+            const dy = positions[i][1] - bh.position[1];
+            const dz = positions[i][2] - bh.position[2];
+            const d2 = dx * dx + dy * dy + dz * dz;
+            const dist = Math.sqrt(d2) + 1e-12;
+
+            if (dist > bh.influenceRadius) continue;
+
+            const softened = d2 + BLACK_HOLE_SOFTENING * BLACK_HOLE_SOFTENING;
+            const invR3 = 1.0 / (softened * Math.sqrt(softened) + 1e-12);
+            const strength = G * bh.mass * BLACK_HOLE_LOCAL_GRAVITY_STRENGTH;
+
+            ax -= strength * dx * invR3;
+            ay -= strength * dy * invR3;
+            az -= strength * dz * invR3;
+        }
+
+        forces[i][0] += ax;
+        forces[i][1] += ay;
+        forces[i][2] += az;
+    }
+}

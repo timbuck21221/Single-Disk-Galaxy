@@ -76,24 +76,115 @@ function toggleCoreSelection(coreIndex) {
     }
 }
 
+function isInitialCoreSlot(coreSlot) {
+    return coreSlot >= 0 && coreSlot < CORE_POS_INIT.length;
+}
+
+function getCoreParticleIndex(coreSlot) {
+    if (coreSlot < 0 || coreSlot >= core_indices.length) return -1;
+    return core_indices[coreSlot];
+}
+
+function getCoreStarData(coreSlot) {
+    const particleIndex = getCoreParticleIndex(coreSlot);
+    if (particleIndex < 0) return null;
+    return STAR_PARTICLE_DATA[particleIndex] || null;
+}
+
+function formatMaybeNumber(value, digits = 1) {
+    if (typeof value !== 'number' || !isFinite(value)) return '—';
+    return value.toFixed(digits);
+}
+
+function buildPromotedCoreEditorHtml(slot, starData) {
+    const accretedGas = starData?.accretedGasMass ?? 0.0;
+    const accretedStars = starData?.accretedStellarMass ?? 0.0;
+    const currentMass = starData?.currentMass ?? CORE_MASSES[slot] ?? 0.0;
+
+    return `
+        <h4>Promoted Black Hole Core ${slot + 1}</h4>
+
+        <label>
+            Current Mass:
+            <span>${Math.round(currentMass)}</span>
+        </label>
+
+        <label>
+            Accreted Gas Mass:
+            <span>${formatMaybeNumber(accretedGas, 1)}</span>
+        </label>
+
+        <label>
+            Accreted Stellar Mass:
+            <span>${formatMaybeNumber(accretedStars, 1)}</span>
+        </label>
+
+        <div class="core-editor-note">
+            This core formed dynamically from a promoted black hole.
+            Its mass updates live through accretion and can’t be manually edited.
+        </div>
+    `;
+}
+
+function buildInitialCoreEditorHtml(slot) {
+    return `
+        <h4>Primordial Black Hole Core ${slot + 1} Parameters</h4>
+
+        <label>
+            Particle Count:
+            <input type="range" id="core_particles_${slot}" min="100" max="2000" step="100" value="${CORE_PARTICLE_COUNTS[slot]}">
+            <span id="core_particles_val_${slot}">${CORE_PARTICLE_COUNTS[slot]}</span>
+        </label>
+
+        <label>
+            Core Mass:
+            <input type="range" id="core_mass_${slot}" min="1000" max="10000" step="100" value="${CORE_MASSES[slot]}">
+            <span id="core_mass_val_${slot}">${CORE_MASSES[slot]}</span>
+        </label>
+
+        <label>
+            Core Velocity Scale:
+            <input type="range" id="core_vel_scale_${slot}" min="0.5" max="1.5" step="0.1" value="${CORE_VEL_SCALES[slot]}">
+            <span id="core_vel_scale_val_${slot}">${CORE_VEL_SCALES[slot].toFixed(1)}</span>
+        </label>
+
+        <button type="button" class="core-apply-btn" id="core_apply_${slot}">Apply Core Settings & Restart</button>
+
+        <div class="core-editor-note">
+            These primordial cores keep the original initialization behavior.
+            Their mass, particle count, and initial velocity scale are still controlled manually.
+        </div>
+    `;
+}
+
 function buildCoreInspectorUI() {
     const coreList = document.getElementById('core-list');
     if (!coreList) return;
 
     coreList.innerHTML = '';
 
-    for (let i = 0; i < CORE_POS_INIT.length; i++) {
+    // Build UI from actual runtime core slots after init.
+    for (let i = 0; i < core_indices.length; i++) {
         const item = document.createElement('div');
         item.className = 'core-item';
         if (i === selectedCoreIndex) item.classList.add('selected');
+
+        const starData = getCoreStarData(i);
+        const isInitial = isInitialCoreSlot(i);
+        const headerTitle = isInitial
+            ? `Primordial Black Hole Core ${i + 1}`
+            : `Promoted Black Hole Core ${i + 1}`;
 
         const header = document.createElement('button');
         header.className = 'core-header';
         header.type = 'button';
         header.innerHTML = `
-            Core ${i + 1}
+            ${headerTitle}
             <span class="core-meta">
-                Mass: ${Math.round(CORE_MASSES[i])} | Particles: ${CORE_PARTICLE_COUNTS[i]} | Vel Scale: ${CORE_VEL_SCALES[i].toFixed(2)}
+                ${isInitial
+                    ? `Mass: ${Math.round(CORE_MASSES[i])} | Particles: ${CORE_PARTICLE_COUNTS[i]} | Vel Scale: ${CORE_VEL_SCALES[i].toFixed(2)}`
+                    : `Mass: ${Math.round(CORE_MASSES[i] ?? 0)} | Accreted Gas: ${formatMaybeNumber(starData?.accretedGasMass ?? 0, 1)} | Accreted Stars: ${formatMaybeNumber(starData?.accretedStellarMass ?? 0, 1)}`
+                }
             </span>
         `;
 
@@ -103,39 +194,15 @@ function buildCoreInspectorUI() {
 
         const editor = document.createElement('div');
         editor.className = 'core-editor';
-
-        editor.innerHTML = `
-            <h4>Core ${i + 1} Parameters</h4>
-
-            <label>
-                Particle Count:
-                <input type="range" id="core_particles_${i}" min="100" max="2000" step="100" value="${CORE_PARTICLE_COUNTS[i]}">
-                <span id="core_particles_val_${i}">${CORE_PARTICLE_COUNTS[i]}</span>
-            </label>
-
-            <label>
-                Core Mass:
-                <input type="range" id="core_mass_${i}" min="1000" max="10000" step="100" value="${CORE_MASSES[i]}">
-                <span id="core_mass_val_${i}">${CORE_MASSES[i]}</span>
-            </label>
-
-            <label>
-                Core Velocity Scale:
-                <input type="range" id="core_vel_scale_${i}" min="0.5" max="1.5" step="0.1" value="${CORE_VEL_SCALES[i]}">
-                <span id="core_vel_scale_val_${i}">${CORE_VEL_SCALES[i].toFixed(1)}</span>
-            </label>
-
-            <button type="button" class="core-apply-btn" id="core_apply_${i}">Apply Core Settings & Restart</button>
-
-            <div class="core-editor-note">
-                Particle count and velocity scale are initialization values, so they take effect after restart.
-                Mass updates immediately and is also used on restart.
-            </div>
-        `;
+        editor.innerHTML = isInitial
+            ? buildInitialCoreEditorHtml(i)
+            : buildPromotedCoreEditorHtml(i, starData);
 
         item.appendChild(header);
         item.appendChild(editor);
         coreList.appendChild(item);
+
+        if (!isInitial) continue;
 
         const particlesSlider = document.getElementById(`core_particles_${i}`);
         const particlesValue = document.getElementById(`core_particles_val_${i}`);
@@ -193,10 +260,12 @@ function updateCoreHeaderMeta(coreIdx) {
     const meta = item.querySelector('.core-meta');
     if (!meta) return;
 
-    meta.textContent =
-        `Mass: ${Math.round(CORE_MASSES[coreIdx])} | ` +
-        `Particles: ${CORE_PARTICLE_COUNTS[coreIdx]} | ` +
-        `Vel Scale: ${CORE_VEL_SCALES[coreIdx].toFixed(2)}`;
+    const starData = getCoreStarData(coreIdx);
+    const isInitial = isInitialCoreSlot(coreIdx);
+
+    meta.textContent = isInitial
+        ? `Mass: ${Math.round(CORE_MASSES[coreIdx])} | Particles: ${CORE_PARTICLE_COUNTS[coreIdx]} | Vel Scale: ${CORE_VEL_SCALES[coreIdx].toFixed(2)}`
+        : `Mass: ${Math.round(CORE_MASSES[coreIdx] ?? 0)} | Accreted Gas: ${formatMaybeNumber(starData?.accretedGasMass ?? 0, 1)} | Accreted Stars: ${formatMaybeNumber(starData?.accretedStellarMass ?? 0, 1)}`;
 }
 
 function addStarBirthFlashes(formedStars) {
@@ -338,6 +407,42 @@ function triggerSupernovaAtIndex(starIndex) {
     addSupernovaEvent(explosionPosition);
 }
 
+function promoteBlackHoleToCore(starIndex) {
+    const starData = STAR_PARTICLE_DATA[starIndex];
+    if (!isBlackHoleStar(starData)) return;
+    if (starData.isPromotedCore) return;
+    if (core_set.has(starIndex)) return;
+
+    core_indices.push(starIndex);
+    core_set.add(starIndex);
+
+    starData.isPromotedCore = true;
+    starData.promotedCoreSlot = core_indices.length - 1;
+
+    CORE_MASSES.push(starData.currentMass);
+
+    // Dynamic promoted black hole cores do not get a full galaxy potential.
+    M_bulge.push(0.0);
+    A_bulge.push(A_BULGE);
+    M_disk.push(0.0);
+    A_disk.push(A_DISK);
+    B_disk.push(B_DISK);
+    V_halo.push(0.0);
+    R_core.push(R_CORE);
+
+    C = core_indices.length;
+}
+
+function syncDynamicBlackHoleCoreMasses() {
+    for (let slot = CORE_POS_INIT.length; slot < core_indices.length; slot++) {
+        const particleIndex = core_indices[slot];
+        const starData = STAR_PARTICLE_DATA[particleIndex];
+        if (isBlackHoleStar(starData)) {
+            CORE_MASSES[slot] = starData.currentMass;
+        }
+    }
+}
+
 // Initialize simulation
 function init() {
     syncLegacyCoreGlobals();
@@ -372,7 +477,7 @@ function init() {
     STAR_PARTICLE_DATA = res.star_particle_data;
     core_indices = res.core_indices;
     BLOCK_SIZE = res.block_sizes[0] || 0;
-    C = CORE_POS_INIT.length;
+    C = core_indices.length;
     core_set = new Set(core_indices);
     CORES = core_indices.map(i => positions[i].slice());
 
@@ -391,7 +496,8 @@ function init() {
         CORES,
         M_bulge, A_bulge,
         M_disk, A_disk, B_disk,
-        V_halo, R_core
+        V_halo, R_core,
+        build_black_hole_sources(positions, STAR_PARTICLE_DATA)
     );
 
     STAR_BIRTH_FLASHES = [];
@@ -411,10 +517,16 @@ function init() {
 
     add_core_core_forces(forces, CORES, CORE_MASSES, core_indices);
 
+    // Important:
+    // Do NOT apply stellar black-hole force mechanics to the primordial startup cores.
+    add_black_hole_forces(forces, positions, STAR_PARTICLE_DATA, core_set);
+
     const target = getActiveCameraTarget();
     if (!camera.initialized || camera.followEnabled) {
         setCameraTarget(target, true);
     }
+
+    buildCoreInspectorUI();
 }
 
 // Physics step
@@ -436,7 +548,22 @@ function update() {
         step_gas_particles(GAS_PARTICLES, gasParticleAcc, scaledDt);
         update_supernova_ejecta_heat(GAS_PARTICLES, scaledDt);
 
+        const accretionResult = accrete_particles_onto_black_holes(
+            GAS_PARTICLES,
+            positions,
+            velocities,
+            STAR_PARTICLE_DATA,
+            core_set
+        );
+        GAS_PARTICLES = accretionResult.gasParticles;
+
+        for (let i = 0; i < accretionResult.promotedBlackHoleIndices.length; i++) {
+            promoteBlackHoleToCore(accretionResult.promotedBlackHoleIndices[i]);
+        }
+
         CORES = core_indices.map(i => positions[i].slice());
+        C = core_indices.length;
+        syncDynamicBlackHoleCoreMasses();
 
         let new_forces = compute_forces_multi(
             positions, CORES,
@@ -450,13 +577,15 @@ function update() {
         });
 
         add_core_core_forces(new_forces, CORES, CORE_MASSES, core_indices);
+        add_black_hole_forces(new_forces, positions, STAR_PARTICLE_DATA, core_set);
 
         let newGasParticleAcc = compute_gas_particle_accelerations(
             GAS_PARTICLES,
             CORES,
             M_bulge, A_bulge,
             M_disk, A_disk, B_disk,
-            V_halo, R_core
+            V_halo, R_core,
+            build_black_hole_sources(positions, STAR_PARTICLE_DATA)
         );
 
         velocities.forEach((v, j) => {
@@ -492,7 +621,8 @@ function update() {
             CORES,
             M_bulge, A_bulge,
             M_disk, A_disk, B_disk,
-            V_halo, R_core
+            V_halo, R_core,
+            build_black_hole_sources(positions, STAR_PARTICLE_DATA)
         );
 
         updateStarBirthFlashes(scaledDt);
@@ -543,6 +673,10 @@ function setupControls() {
         star_render_mode = e.target.value;
     });
 
+    document.getElementById('star_display_filter').addEventListener('change', e => {
+        star_display_filter = e.target.value;
+    });
+
     document.getElementById('disk_radius').addEventListener('input', e => {
         disk_radius = parseFloat(e.target.value);
         document.getElementById('disk_radius_val').textContent = e.target.value;
@@ -555,7 +689,6 @@ function setupControls() {
 
     document.getElementById('apply').addEventListener('click', () => {
         init();
-        buildCoreInspectorUI();
     });
 }
 
@@ -584,6 +717,7 @@ function loop() {
         nearest_r,
         STAR_PARTICLE_DATA,
         star_render_mode,
+        star_display_filter,
         gasParticleRenderData,
         starBirthFlashRenderData,
         supernovaRenderData
@@ -595,6 +729,5 @@ function loop() {
 // Start everything
 setupMouseControls(canvas);
 setupControls();
-buildCoreInspectorUI();
 init();
 loop();
