@@ -132,7 +132,7 @@ function buildInitialCoreEditorHtml(slot) {
 
         <label>
             Particle Count:
-            <input type="range" id="core_particles_${slot}" min="100" max="2000" step="100" value="${CORE_PARTICLE_COUNTS[slot]}">
+            <input type="range" id="core_particles_${slot}" min="100" max="10000" step="100" value="${CORE_PARTICLE_COUNTS[slot]}">
             <span id="core_particles_val_${slot}">${CORE_PARTICLE_COUNTS[slot]}</span>
         </label>
 
