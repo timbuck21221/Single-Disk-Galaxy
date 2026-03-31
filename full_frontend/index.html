@@ -9,93 +9,97 @@
 <body>
     <canvas id="canvas"></canvas>
 
-    <div id="controls">
-        <h3>Live Controls</h3>
+    <div id="controls" class="collapsed">
+        <button id="menu-toggle" aria-label="Toggle controls menu" aria-expanded="false">☰</button>
 
-        <label>
-            DT:
-            <input type="range" id="dt" min="0.005" max="0.1" step="0.005" value="0.005">
-            <span id="dt_val">0.005</span>
-        </label><br>
+        <div id="controls-content">
+            <h3>Live Controls</h3>
 
-        <label>
-            Time Scale:
-            <input type="range" id="time_scale" min="0.01" max="1" step="0.01" value="0.11">
-            <span id="time_scale_val">0.11</span>
-        </label><br>
+            <label>
+                DT:
+                <input type="range" id="dt" min="0.005" max="0.1" step="0.005" value="0.005">
+                <span id="dt_val">0.005</span>
+            </label><br>
 
-        <label>
-            Physics Steps per Frame:
-            <input type="range" id="steps" min="1" max="10" step="1" value="1">
-            <span id="steps_val">1</span>
-        </label><br>
+            <label>
+                Time Scale:
+                <input type="range" id="time_scale" min="0.01" max="1" step="0.01" value="0.11">
+                <span id="time_scale_val">0.11</span>
+            </label><br>
 
-        <label>
-            R_MAX (Bounds Radius):
-            <input type="range" id="r_max" min="50" max="200" step="10" value="120">
-            <span id="r_max_val">120</span>
-        </label><br>
+            <label>
+                Physics Steps per Frame:
+                <input type="range" id="steps" min="1" max="10" step="1" value="1">
+                <span id="steps_val">1</span>
+            </label><br>
 
-        <label>
-            K_TETHER (Bounds Strength):
-            <input type="range" id="k_tether" min="0" max="0.01" step="0.001" value="0.002">
-            <span id="k_tether_val">0.002</span>
-        </label><br>
+            <label>
+                R_MAX (Bounds Radius):
+                <input type="range" id="r_max" min="50" max="200" step="10" value="120">
+                <span id="r_max_val">120</span>
+            </label><br>
 
-        <label>
-            Enable Trails:
-            <input type="checkbox" id="enable_trails" checked>
-            <span> (Visualize density over time)</span>
-        </label><br>
+            <label>
+                K_TETHER (Bounds Strength):
+                <input type="range" id="k_tether" min="0" max="0.01" step="0.001" value="0.002">
+                <span id="k_tether_val">0.002</span>
+            </label><br>
 
-        <label>
-            Trail Fade:
-            <input type="range" id="trail_fade" min="0.01" max="0.5" step="0.01" value="0.05">
-            <span id="trail_fade_val">0.05</span>
-        </label><br>
+            <label>
+                Enable Trails:
+                <input type="checkbox" id="enable_trails" checked>
+                <span>(Visualize density over time)</span>
+            </label><br>
 
-        <label>
-            Star Colors:
-            <select id="star_render_mode">
-                <option value="core_distance" selected>Core Distance</option>
-                <option value="star_type">Star Type</option>
-            </select>
-        </label><br>
+            <label>
+                Trail Fade:
+                <input type="range" id="trail_fade" min="0.01" max="0.5" step="0.01" value="0.05">
+                <span id="trail_fade_val">0.05</span>
+            </label><br>
 
-        <label>
-            Star Display Filter:
-            <select id="star_display_filter">
-                <option value="all" selected>All Stars</option>
-                <option value="brown_dwarf">Brown Dwarfs</option>
-                <option value="low_mass_star">Low-Mass Stars</option>
-                <option value="main_sequence_star">Main Sequence</option>
-                <option value="massive_star">Massive Stars</option>
-                <option value="red_giant">Red Giants</option>
-                <option value="red_supergiant">Red Supergiants</option>
-                <option value="white_dwarf">White Dwarfs</option>
-                <option value="neutron_star">Neutron Stars</option>
-                <option value="pulsar">Pulsars</option>
-                <option value="black_hole">Black Holes</option>
-                <option value="compact_remnant">Compact Remnants</option>
-                <option value="supernova_remnant">Supernova Remnants</option>
-            </select>
-        </label><br>
+            <label>
+                Star Colors:
+                <select id="star_render_mode">
+                    <option value="core_distance" selected>Core Distance</option>
+                    <option value="star_type">Star Type</option>
+                </select>
+            </label><br>
 
-        <h3>Initialization (Apply to restart)</h3>
+            <label>
+                Star Display Filter:
+                <select id="star_display_filter">
+                    <option value="all" selected>All Stars</option>
+                    <option value="brown_dwarf">Brown Dwarfs</option>
+                    <option value="low_mass_star">Low-Mass Stars</option>
+                    <option value="main_sequence_star">Main Sequence</option>
+                    <option value="massive_star">Massive Stars</option>
+                    <option value="red_giant">Red Giants</option>
+                    <option value="red_supergiant">Red Supergiants</option>
+                    <option value="white_dwarf">White Dwarfs</option>
+                    <option value="neutron_star">Neutron Stars</option>
+                    <option value="pulsar">Pulsars</option>
+                    <option value="black_hole">Black Holes</option>
+                    <option value="compact_remnant">Compact Remnants</option>
+                    <option value="supernova_remnant">Supernova Remnants</option>
+                </select>
+            </label><br>
 
-        <label>
-            Disk Radius:
-            <input type="range" id="disk_radius" min="5" max="15" step="1" value="8">
-            <span id="disk_radius_val">8</span>
-        </label><br>
+            <h3>Initialization (Apply to restart)</h3>
 
-        <label>
-            Velocity Noise:
-            <input type="range" id="velocity_noise" min="0" max="0.1" step="0.01" value="0.01">
-            <span id="velocity_noise_val">0.01</span>
-        </label><br>
+            <label>
+                Disk Radius:
+                <input type="range" id="disk_radius" min="5" max="15" step="1" value="8">
+                <span id="disk_radius_val">8</span>
+            </label><br>
 
-        <button id="apply">Apply & Restart</button>
+            <label>
+                Velocity Noise:
+                <input type="range" id="velocity_noise" min="0" max="0.1" step="0.01" value="0.01">
+                <span id="velocity_noise_val">0.01</span>
+            </label><br>
+
+            <button id="apply">Apply & Restart</button>
+        </div>
     </div>
 
     <div id="core-panel">
@@ -112,5 +116,15 @@
     <script src="js/camera.js"></script>
     <script src="js/rendering.js"></script>
     <script src="js/main.js"></script>
+
+    <script>
+        const controls = document.getElementById('controls');
+        const menuToggle = document.getElementById('menu-toggle');
+
+        menuToggle.addEventListener('click', () => {
+            const collapsed = controls.classList.toggle('collapsed');
+            menuToggle.setAttribute('aria-expanded', String(!collapsed));
+        });
+    </script>
 </body>
 </html>

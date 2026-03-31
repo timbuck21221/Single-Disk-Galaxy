@@ -1,6 +1,7 @@
 // Rendering logic
 
 const STAR_SPRITE_CACHE = new Map();
+const BLACK_HOLE_SPRITE_CACHE = new Map();
 
 function clamp01(x) {
     return Math.max(0, Math.min(1, x));
@@ -12,6 +13,10 @@ function lerp(a, b, t) {
 
 function quantizeRadius(radius) {
     return Math.max(0.75, Math.round(radius * 2) / 2);
+}
+
+function quantizeValue(value, step = 0.25) {
+    return Math.round(value / step) * step;
 }
 
 function colorToRgba(color, alpha) {
@@ -87,8 +92,89 @@ function getStarSprite(color, radius, glowAlpha, renderMode) {
     return sprite;
 }
 
+function getBlackHoleSpriteKey(metrics, isPromotedCore) {
+    return [
+        quantizeValue(metrics.bodyRadius, 0.25).toFixed(2),
+        quantizeValue(metrics.lensingRadius, 0.25).toFixed(2),
+        quantizeValue(metrics.rimWidth, 0.25).toFixed(2),
+        quantizeValue(metrics.lensingAlpha, 0.01).toFixed(2),
+        isPromotedCore ? 1 : 0
+    ].join('|');
+}
+
+function createBlackHoleSprite(metrics, isPromotedCore = false) {
+    const radius = Math.max(1.0, metrics.bodyRadius);
+    const lensRadius = Math.max(radius + 1.0, metrics.lensingRadius);
+    const rimWidth = Math.max(1.0, metrics.rimWidth);
+    const [rr, rg, rb] = BLACK_HOLE_RIM_COLOR;
+
+    const subtleRingRadius = isPromotedCore
+        ? Math.min(BLACK_HOLE_MAX_VISUAL_RADIUS, radius * BLACK_HOLE_PROMOTED_SUBTLE_RING_SCALE)
+        : 0.0;
+
+    const maxVisualRadius = Math.max(lensRadius, radius, subtleRingRadius);
+    const padding = Math.ceil(maxVisualRadius + rimWidth + 6);
+    const size = Math.max(16, padding * 2 + 2);
+
+    const off = document.createElement('canvas');
+    off.width = size;
+    off.height = size;
+
+    const c = off.getContext('2d', { alpha: true });
+    const cx = size / 2;
+    const cy = size / 2;
+
+    const lensGrad = c.createRadialGradient(cx, cy, radius * 0.55, cx, cy, lensRadius);
+    lensGrad.addColorStop(0.0, `rgba(${rr},${rg},${rb},0)`);
+    lensGrad.addColorStop(0.52, `rgba(${rr},${rg},${rb},${metrics.lensingAlpha * 0.28})`);
+    lensGrad.addColorStop(0.78, `rgba(${rr},${rg},${rb},${metrics.lensingAlpha})`);
+    lensGrad.addColorStop(1.0, `rgba(${rr},${rg},${rb},0)`);
+
+    c.beginPath();
+    c.arc(cx, cy, lensRadius, 0, 2 * Math.PI);
+    c.fillStyle = lensGrad;
+    c.fill();
+
+    c.beginPath();
+    c.arc(cx, cy, radius * BLACK_HOLE_CORE_DARK_SCALE, 0, 2 * Math.PI);
+    c.fillStyle = `rgb(${STAR_COLOR_BLACK_HOLE[0]},${STAR_COLOR_BLACK_HOLE[1]},${STAR_COLOR_BLACK_HOLE[2]})`;
+    c.fill();
+
+    c.beginPath();
+    c.arc(cx, cy, radius, 0, 2 * Math.PI);
+    c.strokeStyle = `rgba(${rr},${rg},${rb},${BLACK_HOLE_RIM_ALPHA})`;
+    c.lineWidth = rimWidth;
+    c.stroke();
+
+    if (isPromotedCore) {
+        c.beginPath();
+        c.arc(cx, cy, subtleRingRadius, 0, 2 * Math.PI);
+        c.strokeStyle = `rgba(${rr},${rg},${rb},${BLACK_HOLE_PROMOTED_SUBTLE_RING_ALPHA})`;
+        c.lineWidth = Math.max(1.0, rimWidth * 0.72);
+        c.stroke();
+    }
+
+    return {
+        canvas: off,
+        halfW: off.width / 2,
+        halfH: off.height / 2
+    };
+}
+
+function getBlackHoleSprite(metrics, isPromotedCore = false) {
+    const key = getBlackHoleSpriteKey(metrics, isPromotedCore);
+
+    let sprite = BLACK_HOLE_SPRITE_CACHE.get(key);
+    if (!sprite) {
+        sprite = createBlackHoleSprite(metrics, isPromotedCore);
+        BLACK_HOLE_SPRITE_CACHE.set(key, sprite);
+    }
+    return sprite;
+}
+
 function clearStarSpriteCache() {
     STAR_SPRITE_CACHE.clear();
+    BLACK_HOLE_SPRITE_CACHE.clear();
 }
 
 function getSupernovaSceneIntensity(supernovaRenderData) {
@@ -213,7 +299,11 @@ function computeBlackHoleRenderMetrics(starData, isPromotedCore = false) {
     const rimWidth = Math.max(1.0, bodyRadius * BLACK_HOLE_RIM_WIDTH_FACTOR);
     const lensingAlpha = BLACK_HOLE_LENSING_ALPHA * (isPromotedCore ? BLACK_HOLE_PROMOTED_LENSING_ALPHA_SCALE : 1.0);
 
-    const approxCullR = lensingRadius + rimWidth + 6.0;
+    const subtleRingRadius = isPromotedCore
+        ? Math.min(BLACK_HOLE_MAX_VISUAL_RADIUS, bodyRadius * BLACK_HOLE_PROMOTED_SUBTLE_RING_SCALE)
+        : 0.0;
+
+    const approxCullR = Math.max(lensingRadius, subtleRingRadius) + rimWidth + 6.0;
 
     return {
         bodyRadius,
@@ -230,7 +320,13 @@ function computePrimordialCoreBlackHoleRenderMetrics() {
     const lensingRadius = Math.min(BLACK_HOLE_MAX_VISUAL_RADIUS, unclampedLensing);
     const rimWidth = Math.max(1.0, bodyRadius * BLACK_HOLE_RIM_WIDTH_FACTOR);
     const lensingAlpha = BLACK_HOLE_LENSING_ALPHA * BLACK_HOLE_PROMOTED_LENSING_ALPHA_SCALE;
-    const approxCullR = lensingRadius + rimWidth + 6.0;
+
+    const subtleRingRadius = Math.min(
+        BLACK_HOLE_MAX_VISUAL_RADIUS,
+        bodyRadius * BLACK_HOLE_PROMOTED_SUBTLE_RING_SCALE
+    );
+
+    const approxCullR = Math.max(lensingRadius, subtleRingRadius) + rimWidth + 6.0;
 
     return {
         bodyRadius,
@@ -242,45 +338,8 @@ function computePrimordialCoreBlackHoleRenderMetrics() {
 }
 
 function renderBlackHoleParticle(ctx, px, py, metrics, isPromotedCore = false) {
-    const radius = metrics.bodyRadius;
-    const lensRadius = metrics.lensingRadius;
-    const rimWidth = metrics.rimWidth;
-    const [rr, rg, rb] = BLACK_HOLE_RIM_COLOR;
-
-    const lensGrad = ctx.createRadialGradient(px, py, radius * 0.55, px, py, lensRadius);
-    lensGrad.addColorStop(0.0, `rgba(${rr},${rg},${rb},0)`);
-    lensGrad.addColorStop(0.52, `rgba(${rr},${rg},${rb},${metrics.lensingAlpha * 0.28})`);
-    lensGrad.addColorStop(0.78, `rgba(${rr},${rg},${rb},${metrics.lensingAlpha})`);
-    lensGrad.addColorStop(1.0, `rgba(${rr},${rg},${rb},0)`);
-
-    ctx.beginPath();
-    ctx.arc(px, py, lensRadius, 0, 2 * Math.PI);
-    ctx.fillStyle = lensGrad;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(px, py, radius * BLACK_HOLE_CORE_DARK_SCALE, 0, 2 * Math.PI);
-    ctx.fillStyle = `rgb(${STAR_COLOR_BLACK_HOLE[0]},${STAR_COLOR_BLACK_HOLE[1]},${STAR_COLOR_BLACK_HOLE[2]})`;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(px, py, radius, 0, 2 * Math.PI);
-    ctx.strokeStyle = `rgba(${rr},${rg},${rb},${BLACK_HOLE_RIM_ALPHA})`;
-    ctx.lineWidth = rimWidth;
-    ctx.stroke();
-
-    if (isPromotedCore) {
-        const subtleRing = Math.min(
-            BLACK_HOLE_MAX_VISUAL_RADIUS,
-            radius * BLACK_HOLE_PROMOTED_SUBTLE_RING_SCALE
-        );
-
-        ctx.beginPath();
-        ctx.arc(px, py, subtleRing, 0, 2 * Math.PI);
-        ctx.strokeStyle = `rgba(${rr},${rg},${rb},${BLACK_HOLE_PROMOTED_SUBTLE_RING_ALPHA})`;
-        ctx.lineWidth = Math.max(1.0, rimWidth * 0.72);
-        ctx.stroke();
-    }
+    const sprite = getBlackHoleSprite(metrics, isPromotedCore);
+    ctx.drawImage(sprite.canvas, px - sprite.halfW, py - sprite.halfH);
 }
 
 function renderPulsarBeam(ctx, px, py, beamAngle, beamAlphaScale) {
